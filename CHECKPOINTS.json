@@ -10,20 +10,20 @@
     "phase_0": {
       "status": "completed",
       "title": "Workspace Bootstrap & Cargo Configuration",
-      "commit": "be88eaa"
+      "commit": "1817325"
     },
     "phase_1": {
       "status": "completed",
       "title": "Shared Core ECS Primitives, Math Sanitation & Protocol",
       "crate": "game_core",
-      "commit": "14b90e3",
+      "commit": "1290e25",
       "tests_passed": 37,
       "tests_failed": 0
     },
     "phase_2": {
       "status": "completed",
       "title": "Procedural Greybox Physics Playground & In-Game Dev Gym",
-      "commit": "f54ee17",
+      "commit": "1f63b18",
       "crates": ["game_world", "game_combat", "game_dev_tools"],
       "tests_passed": {
         "game_world": 9,
@@ -35,7 +35,7 @@
     "phase_3": {
       "status": "completed",
       "title": "Core Parkour Locomotion Engine (Walk, Sprint, Jump, Slide)",
-      "commit": "f5dac66",
+      "commit": "baa582f",
       "crate": "game_parkour",
       "tests_passed": 30,
       "workspace_tests_passed": 110,
@@ -44,7 +44,7 @@
     "phase_4": {
       "status": "completed",
       "title": "Advanced Acrobatic Parkour (Wall-Run, Wall-Kick, Mantle, Flow State)",
-      "commit": "3b14b24",
+      "commit": "6d4831c",
       "crate": "game_parkour",
       "tests_passed": {
         "game_parkour_unit": 82,
@@ -56,7 +56,7 @@
     "phase_5": {
       "status": "completed",
       "title": "Switchable Camera Rig (FPP / TPP / Photo) & Unified Input",
-      "commit": "04fef43",
+      "commit": "06ac207",
       "crates": ["game_camera", "game_input"],
       "tests_passed": {
         "game_camera_unit": 18,
@@ -69,7 +69,7 @@
     "phase_6": {
       "status": "completed",
       "title": "Melee Combat Engine, Hitbox Sweeps, Combos & Directional Parry",
-      "commit": "08ee630",
+      "commit": "e6a0a88",
       "crate": "game_combat",
       "tests_passed": {
         "game_combat_unit": 47,
@@ -81,7 +81,7 @@
     "phase_7": {
       "status": "completed",
       "title": "Ranged Ballistics Arsenal, Recoil Springs & Status Effects",
-      "commit": "c125c85",
+      "commit": "60bfe87",
       "crate": "game_combat",
       "tests_passed": {
         "game_combat_unit": 76,
@@ -93,7 +93,7 @@
     "phase_8": {
       "status": "completed",
       "title": "Enemy AI Archetypes, Behavior Trees & Combat Arena",
-      "commit": "94ba1e2",
+      "commit": "48c9487",
       "crate": "game_ai",
       "tests_passed": {
         "game_ai_unit": 39,
@@ -105,7 +105,7 @@
     "phase_9": {
       "status": "completed",
       "title": "RPG Progression Engine, 8 Skills & OSRS XP Table 1-99",
-      "commit": "d58c73e",
+      "commit": "63ccb90",
       "crate": "game_rpg",
       "tests_passed": {
         "game_rpg": 32
@@ -116,7 +116,7 @@
     "phase_10": {
       "status": "completed",
       "title": "Multi-Step Narrative Quest Engine & 30 Detailed Quests",
-      "commit": "cbf303c",
+      "commit": "f3166b1",
       "crate": "game_rpg",
       "tests_passed": {
         "game_rpg": 47
@@ -127,8 +127,8 @@
     "phase_11": {
       "status": "completed",
       "title": "Grand Exchange Cyber-Market, Atomic Escrow & Crafting",
-      "commit": "c07a57a",
-      "followup_commits": ["77e47e4"],
+      "commit": "2b43a3d",
+      "followup_commits": ["4b2692a"],
       "crate": "game_economy",
       "tests_passed": {
         "game_economy": 43
@@ -139,7 +139,7 @@
     "phase_12": {
       "status": "completed",
       "title": "Megacity Chunk Streaming, glTF Asset Pipeline & Octrees",
-      "commit": "b598322",
+      "commit": "1d1dd3e",
       "crate": "game_world",
       "tests_passed": {
         "game_world": 49
@@ -150,7 +150,7 @@
     "phase_13": {
       "status": "completed",
       "title": "Unified Network Engine - Offline Loopback & Dedicated Server",
-      "commit": "e80ec88",
+      "commit": "12773a4",
       "crates": ["game_server", "game_client"],
       "tests_passed": {
         "game_server": 32,
@@ -162,7 +162,7 @@
     "phase_14": {
       "status": "completed",
       "title": "Dynamic Adaptive Audio Engine, ElevenLabs Voices & Foley",
-      "commit": "c90e36d",
+      "commit": "665efb5",
       "crate": "game_audio",
       "tests_passed": {
         "game_audio": 27
@@ -173,7 +173,7 @@
     "phase_15": {
       "status": "completed",
       "title": "Cyberpunk Diegetic HUD, Inventory Grid & Menus",
-      "commit": "f7175a5",
+      "commit": "255f6a2",
       "crate": "game_ui",
       "tests_passed": {
         "game_ui": 35,
@@ -185,6 +185,7 @@
     "phase_16": {
       "status": "completed",
       "title": "Next.js 15 Web Companion Portal, Steamworks SDK & Final Production Verification",
+      "commit": "cb75a08",
       "crates": ["game_client", "game_steam"],
       "directories": ["web/companion", "tools/deploy", ".github/workflows"],
       "tests_passed": {
