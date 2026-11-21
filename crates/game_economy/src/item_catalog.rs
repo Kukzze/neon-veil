@@ -91,7 +91,7 @@ pub static MASTER_ITEM_CATALOG: &[ItemDefinition] = &[
     ItemDefinition { id: 2015, name: "Acid Dart Pistol", category: "Weapon", rarity: "Uncommon", is_tradable: true, high_alch_value: 1000, store_price: 2000 },
     ItemDefinition { id: 2016, name: "Heavy Autocannon Barrage", category: "Weapon", rarity: "Epic", is_tradable: true, high_alch_value: 13500, store_price: 27000 },
     ItemDefinition { id: 2017, name: "EMP Scattergun Pulsar", category: "Weapon", rarity: "Rare", is_tradable: true, high_alch_value: 3000, store_price: 6000 },
-    ItemDefinition { id: 2018, name: "Dual Particle SMGs Gemini", category: "Weapon", rarity: "Rare", is_tradable: true, high_alch_value: 3400, store_price: 6800 },
+    ItemDefinition { id: 2018, name: "Dual Particle SMGs Twin", category: "Weapon", rarity: "Rare", is_tradable: true, high_alch_value: 3400, store_price: 6800 },
     ItemDefinition { id: 2019, name: "Arc Thrower Tesla", category: "Weapon", rarity: "Rare", is_tradable: true, high_alch_value: 3800, store_price: 7600 },
     ItemDefinition { id: 2020, name: "Singularity Blade Eclipse", category: "Weapon", rarity: "Exotic", is_tradable: true, high_alch_value: 75000, store_price: 150000 },
     ItemDefinition { id: 2021, name: "Heavy Railgun Cataclysm-X", category: "Weapon", rarity: "Exotic", is_tradable: true, high_alch_value: 88000, store_price: 175000 },
