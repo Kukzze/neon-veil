@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 11 (Grand Exchange Cyber-Market, Atomic Escrow & Crafting)
-- Last Verified Commit: d58c73e (Phase 9); Phase 10 is the commit following it, see `git log`
-- Passing Test Count: 393 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 38 + 8 sims, game_rpg 47; 0 failed)
-- Active Workstream: Phase 10 complete. Quest engine and the 30-quest campaign are live; quest rewards feed skills directly.
+- Current Active Phase: Phase 12 (Megacity Chunk Streaming, glTF Asset Pipeline & Octrees)
+- Last Verified Commit: cbf303c (Phase 10); Phase 11 is the commit following it, see `git log`
+- Passing Test Count: 436 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 38 + 8 sims, game_rpg 47, game_economy 43; 0 failed)
+- Active Workstream: Phase 11 complete. Exchange, wallet, inventory, crafting and loot are live as library code; gameplay wiring follows.
 - Blockers / Notes: none blocking. History scrub deferred to Phase 16 by decision so recorded hashes stay stable. See the phase log below.
-- Next Immediate Action: Implement the exchange order book and escrow in `crates/game_economy`, then `cargo test -p game_economy`.
+- Next Immediate Action: Implement chunk streaming and the octree in `crates/game_world`, then `cargo test -p game_world`.
 
 ## Phase Log
 
@@ -159,7 +159,7 @@
 - Not yet done: derived sprint, melee and recoil multipliers are computed but not yet fed into parkour/combat (the speed multiplier slot is owned by status slows; a combined modifier lands with the stat pipeline), no player respawn on `DeathEvent`, status resistances from mods are stored stats only.
 - Gates: `cargo test --workspace` 378/378, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 
-### Phase 10: Multi-Step Narrative Quest Engine & 30 Detailed Quests (COMPLETE)
+### Phase 10: Multi-Step Narrative Quest Engine & 30 Detailed Quests (COMPLETE, commit `cbf303c`)
 - `quest_engine.rs`: `QuestDifficulty` (Novice..Grandmaster, ordered), `QuestStatus`, `QuestDefinition` (spec fields), `QuestProgress`, typed `QuestStartError` (UnknownQuest, AlreadyCompleted, AlreadyInProgress, MissingPrerequisite, SkillTooLow with required/current), `PlayerQuestLog` (`status`, `can_start_quest` checking completed -> in progress -> prerequisites -> skill levels, `start_quest` clearing earlier failures, `advance_step`, `fail_quest`, `is_completed`, `total_completed`, `current_step`), `QuestCompletion` (credits, items, level-ups from the XP payout).
 - ECS: `QuestCommand` (Start / AdvanceStep / Fail) processed by `process_quest_commands`, emitting `QuestStartedEvent`, `QuestStartRejectedEvent` (with the reason), `QuestStepAdvancedEvent`, `QuestCompletedEvent` (with credits) and `LevelUpEvent`s for skills the reward levelled; `QuestFailedEvent`. Registered in `RpgPlugin` ahead of XP grants.
 - `quest_catalog.rs`: `MASTER_QUEST_CATALOG` with all 30 spec quests (6 Novice, 8 Intermediate, 8 Experienced, 6 Master, 2 Grandmaster): titles, givers, districts, synopses, steps, failure conditions, requirements, prerequisites, XP, credits and item rewards; `find_quest`; `find_prerequisite_cycle` (DFS with visit marks).
@@ -171,3 +171,23 @@
 - Tests: 30 ids 1..=30 with unique titles; tiers by id range; every prerequisite exists, none self-referential, no cycles (and the detector catches an injected Q01 <-> Q03 loop); every quest has steps, failure conditions and XP; Q01 is the only root; Agility 4 cannot start Q02, Agility 5 without Q01 cannot; Q01 runs 7 steps and pays Agility +450 / Ballistics +300 (levels 5 and 4) exactly once; Q01's reward alone unlocks Q02; double start / repeat blocked; fail then retry; Q29 refuses all-87 skills, a single 87, or missing Q28, and accepts all-88 with 23-28; a maxed player completes the whole campaign 1..=30 in order; command system end to end.
 - Not yet done: credit payouts and item grants are reported but not yet deposited (wallet / inventory arrive with the economy phase); quest step triggers from gameplay (e.g. "perform 3 perfect parries") are not yet wired to world events.
 - Gates: `cargo test --workspace` 393/393, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+
+### Phase 11: Grand Exchange Cyber-Market, Atomic Escrow & Crafting (COMPLETE)
+- `error.rs`: `EconomyError` with the design variants plus `InvalidAmount`, `ValueOverflow` and `NotSalvageable`.
+- `wallet.rs`: `Wallet` (1,000 starting credits, private balance that can never go negative, `deposit` rejects negatives and overflow, `withdraw` rejects non-positive amounts and overdrafts with `InsufficientCredits`).
+- `inventory.rs`: `PlayerInventory` (28 slots, every item stacks, emptied stacks free their slot, typed `InsufficientItems` / `InventoryFull`), `CollectionBox` (credits and items awaiting claim; `claim_items` moves every stack that fits and keeps the rest).
+- `item_catalog.rs`: `MASTER_ITEM_CATALOG`, `find_item`, case-insensitive `search_items_by_name`, `filter_by_category`, `filter_by_rarity`, `catalog_len`.
+- `grand_exchange.rs`: `GrandExchangeEngine` with per-item order books (one `Mutex` each, so different items trade in parallel), fixed lock order (book -> order index -> collection boxes), escrow on submission, price-time priority (highest bid / lowest ask, then submission sequence), execution at the seller's ask, 2% tax rounded half up in integer arithmetic and burned, buyer refund of `(bid - ask) * qty`, proceeds to collection boxes, partial fills, owner-only cancellation that refunds exactly the remaining escrow, `place_*_order` returning an `OrderReceipt` with immediate fills, `collect`, trade history, lifetime burned tax.
+- `crafting.rs`: `MASTER_RECIPE_CATALOG` (50 recipes, 4 tiers), `find_recipe`, `can_craft` (level -> materials -> output slot), atomic `craft_item` (inventory untouched on any error), atomic `salvage_item` (half of each material per output item, rounded to nearest; zero-yield items are not salvageable).
+- `loot_engine.rs` / `enemy_loot_tables.rs`: `LootTable` (const `new` sums weights at compile time; `roll` = guaranteed drops + one weighted pick, uniform quantity, quantities scaled by `max(multiplier, 1.0)`), 15 archetype tables on a 10,000 weight scale, `get_enemy_loot_table` accepting any casing with spaces, hyphens or underscores.
+- `lib.rs`: re-exports, `EconomyPlugin` (events `OrderPlacedEvent`, `TradeExecutedEvent`, `OrderCancelledEvent`, `ItemCraftedEvent`, `ItemSalvagedEvent`, `LootDroppedEvent`; resource `GrandExchangeResource(Arc<GrandExchangeEngine>)`).
+- Spec corrections and authored content:
+  - The catalog is titled "100 items" but the enumerated ranges hold 20 + 20 + 30 + 30 + 10 + 9 = 119 items, and recipes and drop tables reference ids beyond the first 100. All 119 are implemented and `ITEM_COUNT` is 119; dropping 19 named items would have been arbitrary.
+  - The design table defines 71 of the items; the other 48 (weapons 2014-2019 and 2022-2029, armor/cyberware 2041-2060, curios 2061-2070) were authored with the listed names, categories, rarities and prices consistent with neighbouring items. Curios are untradable quest items, like capes and the Cosmic Void Cyber-Katana.
+  - The design has 34 recipes with a different numbering; the 50-recipe list is used, and every one of the 34 matches its design counterpart (output, quantity, level, duration, materials). The 16 new recipes got levels inside their tier band and durations in line with their neighbours.
+  - Drop tables 1-6 match the design exactly; quantities for tables 7-15 were authored.
+  - Recipe 23 is listed as "Arc Carbine" and recipe 40 as "Synaptic Accelerator", but their item ids are 2019 "Arc Thrower Tesla" and 2052 "Neural Accelerator"; the ids are authoritative.
+  - `ItemDefinition` derives `Serialize` but not `Deserialize`: its `&'static str` fields cannot be deserialized from owned data.
+- Tests (43): wallet bounds and errors; inventory stacking, the 28-slot limit, removal errors, collection box claim incl. a full inventory; catalog ranges complete, ids/names unique, categories/rarities valid, bound items untradable, design spot checks, search and filters; tax rounding against `(v * 0.02).round()`; exact match (500 -> tax 10, seller 490), overbid (1000 vs 800 -> refund 200, tax 16, seller 784), partial fill (10 vs 4), cancellation without double refund or cross-player cancel, price-time priority, non-crossing orders rest, validation without side effects; 20-thread concurrent trading (4 items, 6,000 operations, ~4,200 fills, mid-run cancels and collections) under a deadlock watchdog, asserting uncrossed books, tax ledger = burned total, and conservation of credits (wallets + escrow + boxes + tax) and of every item; 50 recipes, all referenced items exist, tier bands, level gate, craft consumes/produces, atomic failure on a full inventory, salvage yields, salvage never creates materials; 15 tables registered and well formed, 10,000-roll seeded Monte Carlo on the swarm drone within +/-2.5% (60.4 / 29.6 / 9.9 %), Gorgon guaranteed drops on every roll; plugin registration.
+- Not yet done: no SQL persistence (the design's `sqlx` transactions map onto the in-memory engine; durable storage lands with the server phase); events are registered but not yet emitted by systems; quest credit and item rewards are not yet deposited into `Wallet` / `PlayerInventory`; enemies do not yet roll their tables on death.
+- Gates: `cargo test --workspace` 436/436, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
