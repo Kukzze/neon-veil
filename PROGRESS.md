@@ -77,7 +77,7 @@
 - Physics simulations (`tests/acrobatics_sim.rs`, real Avian colliders, 64 Hz manual clock): sprint vault over a 0.75 m box with momentum preserved and probes recorded; 3 m wall cannot be walked through; wall run then wall kick (+15 Flow, kicked away from the wall); 12 m drop -> HardLanding -> Idle, buffered slide -> LandingRoll with Flow; jump at a 1.6 m ledge -> LedgeMantle -> standing on top.
 - Not yet done: air control (none; momentum is preserved in the air), WallClimb/LedgeGrab/Zipline/Grapple/Ragdoll behaviour, stamina cost for wall runs, step-up over small curbs.
 - Gates: `cargo test --workspace` 169/169, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
-- Untracked previously committed prompt/scratch files (`phase1_prompt.txt`, `phase2_prompt.txt`, `copy_to_clip.ps1`, `copy_phase1_prompt.ps1`); they remain on disk and in earlier history.
+- Untracked previously committed local scratch files; they remain on disk and in earlier history.
 
 ### Phase 5: Switchable Camera Rig & Unified Input (COMPLETE, commit `04fef43`)
 - Input pipeline: leafwing `ActionState<PlayerAction>` (PreUpdate) -> `latch_action_presses` + `apply_look_input` write `ViewAngles` (PreUpdate, after leafwing) -> `build_input_packets` pushes a `PlayerInputPacket` into `PlayerInputState` (FixedPreUpdate) -> `game_parkour::controller::apply_player_input_packets` converts it to `ParkourInput` (FixedUpdate Input set, before probes) -> controller. Remote players will feed `PlayerInputState` from the network the same way.
@@ -106,7 +106,7 @@
   - Spec hitbox offsets use +Z as forward; Bevy forward is -Z, so the spec values would hit behind the attacker. The catalog stores them in Bevy convention (z negated), measured from the feet. Extents are full box sizes; the whip's "3.5 m radius" is a 7 m box limited to 3.5 m.
   - Guard is directional: blocks and parries only count within 60 degrees of facing.
   - Perfect parry staggers the attacker (swing cancelled) besides the 40 posture damage.
-  - Aerial Slam triggers on heavy during JumpDescent (the spec also asks for Crouch; dropped to keep the input single-button, per the Phase 6 brief).
+  - Aerial Slam triggers on heavy during JumpDescent (the spec also asks for Crouch; dropped to keep the input single-button, per the Phase 6 design).
 - Simulations (`tests/melee_sim.rs`, real Avian colliders, 64 Hz): Katana 3-hit chain on a dummy deals exactly 48 + 56 + 135 with floating text and DPS, and the finisher breaks its posture; out-of-reach swing whiffs; guard on tick 1 (109 ms) is a PerfectParry (0 damage, attacker +40 posture, swing cancelled); guard on tick 0 (125 ms) blocks 70 %; a guard facing away takes the full hit; Wall-Run Plunge hits the dummy within 4 m but not one inside the box corner; Aerial Slam sets vy = -35 keeping planar momentum and breaks the victim's posture.
 - Not yet done: fighters have no health pool yet (`MeleeHitEvent` carries the damage; health lands with RPG/AI phases), dummies do not move from knockback (kinematic), no critical hits, dodge roll is bound but has no mechanics, AI enemies do not attack yet (Phase 8 writes `MeleeInput`).
 - Gates: `cargo test --workspace` 262/262, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.

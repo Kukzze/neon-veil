@@ -21,7 +21,10 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["Cutting Onion Studios <engineering@cuttingonionstudios.com>"]
+authors = [
+    "Cutting Onion Studios <engineering@cuttingonionstudios.com>",
+    "Daksh Rawat (Kukzze) <dakshrawat320@gmail.com>",
+]
 license = "Proprietary"
 repository = "https://github.com/CuttingOnionStudios/neon-veil"
 rust-version = "1.82.0"

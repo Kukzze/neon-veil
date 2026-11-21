@@ -6,7 +6,3 @@
 /web/companion/node_modules
 /web/companion/.next
 
-# Prompt and scratch scripts
-*_prompt.txt
-copy_*.ps1
-
