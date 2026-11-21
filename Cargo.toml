@@ -94,7 +94,8 @@ leafwing-input-manager = "0.16.0"
 
 # Developer GUI & Diagnostics
 bevy_egui = "0.31.1"
-egui_plot = "0.30.0"
+# egui_plot must track the egui version used by bevy_egui (0.31.x -> egui 0.29).
+egui_plot = "0.29.0"
 
 # Audio Synthesis & Playback
 kira = { version = "0.9.6", default-features = false, features = ["cpal", "symphonia"] }

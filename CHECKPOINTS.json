@@ -1,8 +1,8 @@
 {
   "project": "NEON_VEIL_ZERO_PROTOCOL",
-  "active_phase": 2,
-  "completed_phases": [0, 1],
-  "last_updated": "2026-11-21T08:30:56Z",
+  "active_phase": 3,
+  "completed_phases": [0, 1, 2],
+  "last_updated": "2026-11-21T08:56:19Z",
   "cargo_check_status": "PASS",
   "cargo_clippy_status": "PASS",
   "cargo_test_status": "PASS",
@@ -16,12 +16,24 @@
       "status": "completed",
       "title": "Shared Core ECS Primitives, Math Sanitation & Protocol",
       "crate": "game_core",
+      "commit": "14b90e3",
       "tests_passed": 37,
       "tests_failed": 0
     },
     "phase_2": {
+      "status": "completed",
+      "title": "Procedural Greybox Physics Playground & In-Game Dev Gym",
+      "crates": ["game_world", "game_combat", "game_dev_tools"],
+      "tests_passed": {
+        "game_world": 9,
+        "game_combat": 17,
+        "game_dev_tools": 15
+      },
+      "tests_failed": 0
+    },
+    "phase_3": {
       "status": "pending",
-      "title": "Procedural Greybox Physics Playground & In-Game Dev Gym"
+      "title": "Core Parkour Locomotion Engine (Walk, Sprint, Jump, Slide)"
     }
   }
 }
