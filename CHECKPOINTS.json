@@ -1,8 +1,8 @@
 {
   "project": "NEON_VEIL_ZERO_PROTOCOL",
-  "active_phase": 3,
-  "completed_phases": [0, 1, 2],
-  "last_updated": "2026-11-21T08:56:19Z",
+  "active_phase": 4,
+  "completed_phases": [0, 1, 2, 3],
+  "last_updated": "2026-11-21T09:11:34Z",
   "cargo_check_status": "PASS",
   "cargo_clippy_status": "PASS",
   "cargo_test_status": "PASS",
@@ -23,6 +23,7 @@
     "phase_2": {
       "status": "completed",
       "title": "Procedural Greybox Physics Playground & In-Game Dev Gym",
+      "commit": "f54ee17",
       "crates": ["game_world", "game_combat", "game_dev_tools"],
       "tests_passed": {
         "game_world": 9,
@@ -32,8 +33,16 @@
       "tests_failed": 0
     },
     "phase_3": {
+      "status": "completed",
+      "title": "Core Parkour Locomotion Engine (Walk, Sprint, Jump, Slide)",
+      "crate": "game_parkour",
+      "tests_passed": 30,
+      "workspace_tests_passed": 110,
+      "tests_failed": 0
+    },
+    "phase_4": {
       "status": "pending",
-      "title": "Core Parkour Locomotion Engine (Walk, Sprint, Jump, Slide)"
+      "title": "Advanced Acrobatic Parkour (Wall-Run, Wall-Kick, Mantle, Flow State)"
     }
   }
 }

@@ -7,8 +7,9 @@ use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use physics_editor::{
-    parse_and_execute_console_command, render_dev_gui, toggle_dev_console, ConsoleCommandEvent,
-    ConsoleSubmitEvent, DevToolsState, LivePhysicsTuning,
+    apply_tuning_to_parkour, parse_and_execute_console_command, render_dev_gui,
+    seed_tuning_from_parkour, toggle_dev_console, ConsoleCommandEvent, ConsoleSubmitEvent,
+    DevToolsState, LivePhysicsTuning,
 };
 use visualizers::{
     draw_debug_gizmos, sync_visualizer_config, DebugShapecastQueue, DebugVisualizerConfig,
@@ -17,7 +18,8 @@ use visualizers::{
 /// Developer console, live physics tuning and gizmo overlays.
 ///
 /// Requires a windowed app (`DefaultPlugins`); adds `EguiPlugin` and
-/// `FrameTimeDiagnosticsPlugin` when they are not already present.
+/// `FrameTimeDiagnosticsPlugin` when they are not already present. When
+/// `ParkourPhysicsConstants` exists, the tuning sliders mirror and edit it.
 pub struct DevToolsPlugin;
 
 impl Plugin for DevToolsPlugin {
@@ -36,11 +38,13 @@ impl Plugin for DevToolsPlugin {
             .init_resource::<DebugShapecastQueue>()
             .add_event::<ConsoleSubmitEvent>()
             .add_event::<ConsoleCommandEvent>()
+            .add_systems(Startup, seed_tuning_from_parkour)
             .add_systems(
                 Update,
                 (
                     toggle_dev_console.run_if(resource_exists::<ButtonInput<KeyCode>>),
                     render_dev_gui,
+                    apply_tuning_to_parkour.run_if(resource_changed::<LivePhysicsTuning>),
                     parse_and_execute_console_command,
                     sync_visualizer_config.run_if(resource_changed::<DevToolsState>),
                 )

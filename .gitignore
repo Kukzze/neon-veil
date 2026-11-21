@@ -5,3 +5,8 @@
 .env.*
 /web/companion/node_modules
 /web/companion/.next
+
+# Prompt and scratch scripts
+phase*_prompt.txt
+copy_*.ps1
+

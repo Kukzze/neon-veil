@@ -2720,6 +2720,7 @@ dependencies = [
  "bevy",
  "game_core",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

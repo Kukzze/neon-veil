@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use egui_plot::{Line, Plot, PlotPoints};
 use game_core::identifiers::PlayerCharacterMarker;
+use game_parkour::ParkourPhysicsConstants;
 use std::collections::VecDeque;
 
 pub const DEV_CONSOLE_TITLE: &str = "NEON VEIL // DEVELOPER ENGINE CONSOLE";
@@ -33,54 +34,67 @@ impl TuningParameter {
     }
 }
 
+// Each parameter maps 1:1 onto a `ParkourPhysicsConstants` field (noted per
+// constant); its default must equal that field's default, which is enforced
+// by `defaults_mirror_parkour_constants`.
+
+/// -> `sprint_speed`
 pub const SPRINT_SPEED: TuningParameter = TuningParameter {
     label: "Sprint Speed (m/s)",
     min: 5.0,
     max: 25.0,
-    default: 13.5,
+    default: 12.8,
 };
+/// -> `jump_vertical_impulse`
 pub const JUMP_IMPULSE: TuningParameter = TuningParameter {
-    label: "Jump Impulse (N*s)",
+    label: "Jump Velocity (m/s)",
     min: 4.0,
     max: 18.0,
-    default: 8.8,
+    default: 9.4,
 };
+/// -> `gravity_acceleration`
 pub const GRAVITY_ACCELERATION: TuningParameter = TuningParameter {
     label: "Gravity (m/s^2)",
     min: 9.8,
     max: 50.0,
     default: 24.5,
 };
+/// -> `wall_run_sink_speed`
 pub const WALL_RUN_SLIDE_SPEED: TuningParameter = TuningParameter {
     label: "Wall Descent (m/s)",
     min: 0.0,
     max: 5.0,
-    default: 1.2,
+    default: 1.25,
 };
+/// -> `wall_kick_normal_impulse`
 pub const WALL_KICK_IMPULSE: TuningParameter = TuningParameter {
-    label: "Wall Kick Force",
+    label: "Wall Kick Push-off Impulse",
     min: 5.0,
     max: 20.0,
-    default: 10.5,
+    default: 9.2,
 };
+/// -> `slide_kinetic_friction`
 pub const SLIDE_FRICTION: TuningParameter = TuningParameter {
-    label: "Slide Friction Decay",
-    min: 0.85,
-    max: 0.999,
-    default: 0.965,
+    label: "Slide Kinetic Friction (mu)",
+    min: 0.0,
+    max: 0.2,
+    default: 0.035,
 };
+/// -> `coyote_time_duration`
 pub const COYOTE_TIME_SECONDS: TuningParameter = TuningParameter {
     label: "Coyote Window (s)",
     min: 0.05,
     max: 0.30,
     default: 0.15,
 };
+/// -> `jump_buffer_duration`
 pub const JUMP_BUFFER_SECONDS: TuningParameter = TuningParameter {
     label: "Jump Buffer (s)",
     min: 0.05,
     max: 0.30,
     default: 0.12,
 };
+/// Not yet mapped: the flow-state system arrives in Phase 4.
 pub const FLOW_MULTIPLIER: TuningParameter = TuningParameter {
     label: "Flow Speed Multiplier",
     min: 1.0,
@@ -119,7 +133,37 @@ impl Default for LivePhysicsTuning {
     }
 }
 
+impl From<&ParkourPhysicsConstants> for LivePhysicsTuning {
+    fn from(c: &ParkourPhysicsConstants) -> Self {
+        Self {
+            sprint_speed: c.sprint_speed,
+            jump_impulse: c.jump_vertical_impulse,
+            gravity_acceleration: c.gravity_acceleration,
+            wall_run_slide_speed: c.wall_run_sink_speed,
+            wall_kick_impulse: c.wall_kick_normal_impulse,
+            slide_friction: c.slide_kinetic_friction,
+            coyote_time_seconds: c.coyote_time_duration,
+            jump_buffer_seconds: c.jump_buffer_duration,
+            flow_multiplier: FLOW_MULTIPLIER.default,
+        }
+    }
+}
+
 impl LivePhysicsTuning {
+    /// Copies the tuned values into the parkour constants, clamped to bounds.
+    pub fn apply_to(&self, constants: &mut ParkourPhysicsConstants) {
+        let mut clamped = self.clone();
+        clamped.clamp_to_bounds();
+        constants.sprint_speed = clamped.sprint_speed;
+        constants.jump_vertical_impulse = clamped.jump_impulse;
+        constants.gravity_acceleration = clamped.gravity_acceleration;
+        constants.wall_run_sink_speed = clamped.wall_run_slide_speed;
+        constants.wall_kick_normal_impulse = clamped.wall_kick_impulse;
+        constants.slide_kinetic_friction = clamped.slide_friction;
+        constants.coyote_time_duration = clamped.coyote_time_seconds;
+        constants.jump_buffer_duration = clamped.jump_buffer_seconds;
+    }
+
     /// Every parameter paired with its bounds, in display order.
     pub fn parameters_mut(&mut self) -> [(&'static TuningParameter, &mut f32); 9] {
         [
@@ -283,6 +327,39 @@ pub fn toggle_dev_console(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<Dev
     }
 }
 
+/// Mirrors the parkour constants into the tuning window at startup, so a
+/// configured (non-default) setup is displayed rather than overwritten.
+pub fn seed_tuning_from_parkour(
+    constants: Option<Res<ParkourPhysicsConstants>>,
+    mut tuning: ResMut<LivePhysicsTuning>,
+) {
+    if let Some(constants) = constants {
+        let flow_multiplier = tuning.flow_multiplier;
+        *tuning.bypass_change_detection() = LivePhysicsTuning {
+            flow_multiplier,
+            ..LivePhysicsTuning::from(&*constants)
+        };
+    }
+}
+
+/// Pushes slider edits into [`ParkourPhysicsConstants`]. Does nothing when
+/// the tuning already matches the constants.
+pub fn apply_tuning_to_parkour(
+    tuning: Res<LivePhysicsTuning>,
+    constants: Option<ResMut<ParkourPhysicsConstants>>,
+) {
+    let Some(mut constants) = constants else {
+        return;
+    };
+    let current = LivePhysicsTuning {
+        flow_multiplier: tuning.flow_multiplier,
+        ..LivePhysicsTuning::from(&*constants)
+    };
+    if current != *tuning {
+        tuning.apply_to(&mut constants);
+    }
+}
+
 /// Draws the developer console window.
 pub fn render_dev_gui(
     mut contexts: EguiContexts,
@@ -405,17 +482,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tuning_defaults_match_spec() {
-        let t = LivePhysicsTuning::default();
-        assert_eq!(t.sprint_speed, 13.5);
-        assert_eq!(t.jump_impulse, 8.8);
-        assert_eq!(t.gravity_acceleration, 24.5);
-        assert_eq!(t.wall_run_slide_speed, 1.2);
-        assert_eq!(t.wall_kick_impulse, 10.5);
-        assert_eq!(t.slide_friction, 0.965);
-        assert_eq!(t.coyote_time_seconds, 0.15);
-        assert_eq!(t.jump_buffer_seconds, 0.12);
-        assert_eq!(t.flow_multiplier, 1.25);
+    fn defaults_mirror_parkour_constants() {
+        let from_parkour = LivePhysicsTuning::from(&ParkourPhysicsConstants::default());
+        assert_eq!(LivePhysicsTuning::default(), from_parkour);
+        assert_eq!(from_parkour.flow_multiplier, 1.25);
+    }
+
+    #[test]
+    fn apply_to_maps_every_field_and_clamps() {
+        let tuning = LivePhysicsTuning {
+            sprint_speed: 14.0,
+            jump_impulse: 10.0,
+            gravity_acceleration: 30.0,
+            wall_run_slide_speed: 2.0,
+            wall_kick_impulse: 12.0,
+            slide_friction: 0.5,
+            coyote_time_seconds: 0.2,
+            jump_buffer_seconds: 0.1,
+            flow_multiplier: 1.5,
+        };
+        let mut c = ParkourPhysicsConstants::default();
+        tuning.apply_to(&mut c);
+        assert_eq!(c.sprint_speed, 14.0);
+        assert_eq!(c.jump_vertical_impulse, 10.0);
+        assert_eq!(c.gravity_acceleration, 30.0);
+        assert_eq!(c.wall_run_sink_speed, 2.0);
+        assert_eq!(c.wall_kick_normal_impulse, 12.0);
+        assert_eq!(c.slide_kinetic_friction, 0.2, "clamped to slider max");
+        assert_eq!(c.coyote_time_duration, 0.2);
+        assert_eq!(c.jump_buffer_duration, 0.1);
+        // Fields without a slider are untouched.
+        assert_eq!(c.walk_speed, 5.2);
+        assert_eq!(c.wall_kick_forward_impulse, 11.5);
+    }
+
+    #[test]
+    fn sliders_flow_into_parkour_constants_without_clobbering_config() {
+        let mut app = App::new();
+        app.insert_resource(ParkourPhysicsConstants {
+            sprint_speed: 30.0, // configured outside the slider range
+            ..ParkourPhysicsConstants::default()
+        })
+        .init_resource::<LivePhysicsTuning>()
+        .add_systems(Startup, seed_tuning_from_parkour)
+        .add_systems(
+            Update,
+            apply_tuning_to_parkour.run_if(resource_changed::<LivePhysicsTuning>),
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<LivePhysicsTuning>().sprint_speed,
+            30.0
+        );
+        assert_eq!(
+            app.world()
+                .resource::<ParkourPhysicsConstants>()
+                .sprint_speed,
+            30.0,
+            "seeded config must survive the first frame"
+        );
+
+        app.world_mut()
+            .resource_mut::<LivePhysicsTuning>()
+            .jump_impulse = 11.0;
+        app.update();
+        let c = app.world().resource::<ParkourPhysicsConstants>();
+        assert_eq!(c.jump_vertical_impulse, 11.0);
+        assert_eq!(c.sprint_speed, 25.0, "edits apply the clamped tuning");
     }
 
     #[test]
@@ -444,8 +577,8 @@ mod tests {
         assert_eq!(t.sprint_speed, 25.0);
         assert_eq!(t.jump_impulse, 4.0);
         assert_eq!(t.gravity_acceleration, 24.5);
-        assert_eq!(t.wall_run_slide_speed, 1.2);
-        assert_eq!(t.slide_friction, 0.999);
+        assert_eq!(t.wall_run_slide_speed, 1.25);
+        assert_eq!(t.slide_friction, 0.2);
     }
 
     #[test]
