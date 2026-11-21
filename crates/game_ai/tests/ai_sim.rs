@@ -7,7 +7,7 @@ use bevy::time::TimeUpdateStrategy;
 use game_ai::{
     spawn_boss_gorgon, spawn_cyber_ninja, spawn_shielded_heavy, spawn_street_grunt,
     spawn_swarm_drone, AiBlackboard, AiPerception, AlertState, BossGorgon,
-    BossPhaseTransitionEvent, DroneDetonationEvent, Enemy, GameAiPlugin,
+    BossPhaseTransitionEvent, DroneDetonationEvent, GameAiPlugin,
 };
 use game_combat::{
     BallisticProfile, MeleeCombatState, RangedHitEvent, RangedInput, ShotFiredEvent,
@@ -15,6 +15,7 @@ use game_combat::{
 use game_core::identifiers::PlayerCharacterMarker;
 use game_core::input::ViewAngles;
 use game_parkour::{ParkourController, ParkourState};
+use game_rpg::{Health, Shields};
 use std::f32::consts::PI;
 use std::time::Duration;
 
@@ -67,11 +68,20 @@ fn spawn_player(app: &mut App, position: Vec3) -> Entity {
             PlayerCharacterMarker,
             ParkourController::default(),
             MeleeCombatState::default(),
+            Health::new(100.0),
+            Shields::default(),
             Transform::from_translation(position),
             RigidBody::Kinematic,
             Collider::capsule(0.4, 1.0),
         ))
         .id()
+}
+
+/// Shields plus health.
+fn vitals(app: &App, entity: Entity) -> f32 {
+    let world = app.world();
+    world.get::<Health>(entity).map_or(0.0, |h| h.current)
+        + world.get::<Shields>(entity).map_or(0.0, |s| s.current)
 }
 
 fn face(app: &mut App, entity: Entity, yaw: f32) {
@@ -182,7 +192,10 @@ fn shoot_heavy(heavy_yaw: f32) -> (RangedHitEvent, f32) {
         .into_iter()
         .find(|h| h.shooter == player && h.target == heavy)
         .expect("the shot reached the heavy");
-    (hit, app.world().get::<Enemy>(heavy).expect("enemy").health)
+    (
+        hit,
+        app.world().get::<Health>(heavy).expect("health").current,
+    )
 }
 
 #[test]
@@ -295,7 +308,12 @@ fn gorgon_moves_through_its_three_phases() {
 fn swarm_drone_hovers_then_kamikazes_when_hurt() {
     let mut app = sim_app();
     settle(&mut app);
-    spawn_player(&mut app, Vec3::new(0.0, STANDING_Y, 0.0));
+    let player = spawn_player(&mut app, Vec3::new(0.0, STANDING_Y, 0.0));
+    // Sturdy enough to survive the SMG while hovering, so the blast is measurable.
+    app.world_mut()
+        .get_mut::<Health>(player)
+        .expect("health")
+        .set_max(10_000.0);
     let drone = spawn_with(&mut app, |c| {
         spawn_swarm_drone(c, Vec3::new(0.0, 4.0, -12.0))
     });
@@ -309,10 +327,11 @@ fn swarm_drone_hovers_then_kamikazes_when_hurt() {
         "holds altitude"
     );
 
+    let vitals_before = vitals(&app, player);
     app.world_mut()
-        .get_mut::<Enemy>(drone)
-        .expect("enemy")
-        .health = 20.0;
+        .get_mut::<Health>(drone)
+        .expect("health")
+        .current = 20.0;
     let mut detonated = Vec::new();
     for _ in 0..192 {
         app.update();
@@ -323,6 +342,11 @@ fn swarm_drone_hovers_then_kamikazes_when_hurt() {
     }
     assert_eq!(detonated.len(), 1, "charged in and blew up");
     assert!(app.world().get_entity(drone).is_err(), "drone is gone");
+    app.update();
+    assert!(
+        vitals_before - vitals(&app, player) >= 60.0 - 1e-3,
+        "the blast hurt the player"
+    );
 }
 
 #[test]
@@ -365,8 +389,8 @@ fn grunt_raises_the_alarm_returns_fire_and_the_ninja_flanks() {
             .any(|h| h.shooter == player && h.target == grunt),
         "the player hit the grunt"
     );
-    let grunt_enemy = app.world().get::<Enemy>(grunt).expect("grunt");
-    assert!(grunt_enemy.health < grunt_enemy.health_max);
+    let grunt_health = app.world().get::<Health>(grunt).expect("grunt");
+    assert!(grunt_health.current < grunt_health.max);
     assert_eq!(alert(&app, grunt), AlertState::Combat);
     assert!(
         shots.iter().any(|s| s.shooter == grunt),
@@ -377,6 +401,7 @@ fn grunt_raises_the_alarm_returns_fire_and_the_ninja_flanks() {
             .any(|h| h.shooter == grunt && h.target == player),
         "and connected"
     );
+    assert!(vitals(&app, player) < 200.0, "return fire hurt the player");
 
     assert_eq!(
         alert(&app, ninja),

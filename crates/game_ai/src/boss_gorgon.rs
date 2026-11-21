@@ -24,6 +24,7 @@ use game_core::identifiers::PlayerCharacterMarker;
 use game_core::input::ViewAngles;
 use game_parkour::shapecasts::CHARACTER_HALF_HEIGHT;
 use game_parkour::{ParkourController, ParkourInput, ParkourState};
+use game_rpg::DamageEvent;
 use std::time::Duration;
 
 pub const GORGON_HEALTH: f32 = 25_000.0;
@@ -460,6 +461,7 @@ pub fn update_boss_hazards(
         Without<PlayerCharacterMarker>,
     >,
     mut hits: EventWriter<HazardHitEvent>,
+    mut damage: EventWriter<DamageEvent>,
 ) {
     let dt = time.delta_secs();
     for (hazard, transform, mut laser) in &mut lasers {
@@ -474,6 +476,11 @@ pub fn update_boss_hazards(
                     hazard,
                     target: player,
                     damage: laser.damage,
+                });
+                damage.send(DamageEvent {
+                    target: player,
+                    source: Some(hazard),
+                    amount: laser.damage,
                 });
             }
         }
@@ -494,6 +501,11 @@ pub fn update_boss_hazards(
                     hazard,
                     target: player,
                     damage: strike.damage,
+                });
+                damage.send(DamageEvent {
+                    target: player,
+                    source: Some(hazard),
+                    amount: strike.damage,
                 });
             }
         }

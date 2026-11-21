@@ -1,8 +1,8 @@
 {
   "project": "NEON_VEIL_ZERO_PROTOCOL",
-  "active_phase": 9,
-  "completed_phases": [0, 1, 2, 3, 4, 5, 6, 7, 8],
-  "last_updated": "2026-11-21T10:36:20Z",
+  "active_phase": 10,
+  "completed_phases": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "last_updated": "2026-11-21T11:03:38Z",
   "cargo_check_status": "PASS",
   "cargo_clippy_status": "PASS",
   "cargo_test_status": "PASS",
@@ -93,6 +93,7 @@
     "phase_8": {
       "status": "completed",
       "title": "Enemy AI Archetypes, Behavior Trees & Combat Arena",
+      "commit": "94ba1e2",
       "crate": "game_ai",
       "tests_passed": {
         "game_ai_unit": 39,
@@ -102,8 +103,18 @@
       "tests_failed": 0
     },
     "phase_9": {
+      "status": "completed",
+      "title": "RPG Progression Engine, 8 Skills & OSRS XP Table 1-99",
+      "crate": "game_rpg",
+      "tests_passed": {
+        "game_rpg": 32
+      },
+      "workspace_tests_passed": 378,
+      "tests_failed": 0
+    },
+    "phase_10": {
       "status": "pending",
-      "title": "RPG Progression Engine, 8 Skills & OSRS XP Table 1-99"
+      "title": "Multi-Step Narrative Quest Engine & 30 Detailed Quests"
     }
   }
 }

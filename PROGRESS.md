@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 9 (RPG Progression Engine, 8 Skills & OSRS XP Table 1-99)
-- Last Verified Commit: fe127e2 (repository hygiene after Phase 7); Phase 8 is the commit following it, see `git log`
-- Passing Test Count: 347 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 39 + 8 sims; 0 failed)
-- Active Workstream: Phase 8 complete. Six enemy archetypes and the three-phase Gorgon boss drive the same parkour and combat primitives as the player.
+- Current Active Phase: Phase 10 (Multi-Step Narrative Quest Engine & 30 Detailed Quests)
+- Last Verified Commit: 94ba1e2 (Phase 8); Phase 9 is the commit following it, see `git log`
+- Passing Test Count: 378 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 38 + 8 sims, game_rpg 32; 0 failed)
+- Active Workstream: Phase 9 complete. Skills, the OSRS curve, unified health/shields for players and enemies, and the mod system are live.
 - Blockers / Notes: none blocking. History scrub deferred to Phase 16 by decision so recorded hashes stay stable. See the phase log below.
-- Next Immediate Action: Implement the XP table and skill progression in `crates/game_rpg`, then `cargo test -p game_rpg`.
+- Next Immediate Action: Implement the quest engine in `crates/game_rpg`, then `cargo test -p game_rpg`.
 
 ## Phase Log
 
@@ -126,7 +126,7 @@
 - Not yet done: fighters still have no health pool (hit events carry damage), shields and armor do not exist yet (EMP and Acid expose `is_emp_active` / armor-shred ticks for them), the fire button triggers both melee and ranged if an entity has both (active-weapon selection comes with weapon swapping), no muzzle/impact VFX or audio (ShotFiredEvent is the hook).
 - Gates: `cargo test --workspace` 299/299, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 
-### Phase 8: Enemy AI Archetypes, Behavior Trees & Combat Arena (COMPLETE)
+### Phase 8: Enemy AI Archetypes, Behavior Trees & Combat Arena (COMPLETE, commit `94ba1e2`)
 - `behavior_tree.rs`: `BehaviorStatus`; `BehaviorNode<A>` (Selector, Sequence, Inverter, Cooldown, Leaf) generic over the leaf type and ticked with a closure; reactive re-evaluation from the root each tick; cooldowns advance every tick even when their branch is skipped and start only on child success; `BehaviorTree` wrapper.
 - `perception.rs`: `AlertState` (Unaware < Suspicious < Alerted < Combat), `AiPerception` (90 degree cone, 25 / 40 m sight, 15 m footsteps, 50 m gunfire, suspicion 0-100), `AiBlackboard` (spec fields + investigate and cover spots), pure `observe` state machine (sighting -> Combat; gunfire -> Alerted + investigate; footsteps build suspicion; 2 s without sight -> Suspicious, investigate last known; decay -> Unaware), `in_vision_cone` (horizontal), `line_of_sight` ray, `update_ai_perception`, `propagate_alarms` (30 m, shares the target).
 - `actions.rs`: `AiAction` leaves (InCombat, IsInvestigating, HealthBelow, TargetWithin, TargetAttacking, Patrol, Investigate, Chase, Reposition, TakeCover, WallRunFlank, ChargeTarget, MeleeAttack, RangedAttack, Guard, ThrowGrenade, Hack, SpecialAttack, MissileSalvo), `AiContext` snapshot, `AiIntent` output, `AiWorld` line-of-sight trait, `find_cover` (12-sample ring, hidden from the threat and reachable), `run_action`.
@@ -141,3 +141,20 @@
 - Simulations (`tests/ai_sim.rs`, real Avian colliders, full parkour + combat stack, 64 Hz): an enemy spots a player in its cone with clear sight -> Combat; a wall blocks sight; a player behind it is not seen; the Shielded Heavy deflects a frontal sniper shot (0 damage) and takes the full 220 from behind; the Cyber-Ninja wall-runs a corridor while flanking; Gorgon goes 1 -> 2 (GrapplePull, climbs above 5 m) -> 3 (drops below 1.5 m and closes in); a swarm drone holds 4 m altitude, then kamikazes and despawns when hurt; end to end: the player shoots an unaware grunt, the grunt engages, raises the alarm and returns fire that connects, and the alarmed ninja closes more than 8 m on the player.
 - Not yet done: no navmesh (direct steering with wall-run and vault fallbacks); player health does not exist yet, so hazard and drone damage to the player are emitted as events only; Netrunner shield recharge awaits a shield system; the Mecha Enforcer reuses the character capsule; no animation/VFX hooks beyond events.
 - Gates: `cargo test --workspace` 347/347, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+
+### Phase 9: RPG Progression Engine, 8 Skills & OSRS XP Table 1-99 (COMPLETE)
+- `xp_table.rs`: `MAX_LEVEL` 99, `MAX_XP` 13,034,431, `HALFWAY_XP` 6,517,253 (level 92), `XP_CAP` 200,000,000; `XP_TABLE` generated from the OSRS formula (no runtime floating point) and re-derived by a test for all 99 levels; `xp_to_level` (binary search), `level_to_xp`, `xp_remaining_to_next_level`, `progress_to_next_level`.
+- `skills.rs`: `SkillType` (8 skills), `CharacterSkills` (`get_xp`, `get_level`, `get_boosted_level`, `get_total_level` 8..792, `get_total_xp`, `add_xp` capped at 200M returning the new level, `boost`, `restore_boosts`; boosts keep their offset across level-ups), `LevelUpEvent`, `XpGrantEvent` + `apply_xp_grants`.
+- `attributes.rs`: `Health` (`take_damage` returns damage taken, `heal`, `is_dead`, `set_max` grants raised maximums), `Shields` (100 max, 25/s, 3 s delay restarted by every hit, `take_damage` returns bleed-through, `tick` blocked by EMP), `CharacterAttributes` derived from boosted levels and mods (Endurance +5 HP / +2 shields / +3 armor per level, Agility stamina and sprint, Cyber-Melee damage, Ballistics recoil; `DR = armor / (armor + 300)`, Acid shred carried over), `resolve_damage` (shields absorb raw damage, armor reduces only the bleed-through), `DamageEvent`, `DeathEvent`, `recompute_character_attributes` (on skill or mod change; pushes into Health, Shields and FlowState stamina), `apply_combat_damage` (melee, ranged, status ticks incl. armor shred, generic DamageEvent), `update_player_shields`.
+- `mod_system.rs`: `ModPolarity` (Attack V, Defense D, Utility -, Augment =, Universal), `CyberModCard` (`drain_cost` = base + rank, `with_rank`, `stat_bonus` = value x (rank + 1)), `slot_drain` (match: ceil(d/2); none: d; mismatch: d + ceil(0.25 d); Universal matches all), `ModLoadout` (30 capacity, 60 with `install_cyber_core_overcharge`, 8 slots, `total_drain`, `is_valid_loadout` incl. no duplicates, `try_install` with typed `ModLoadoutError`, `remove`, `aggregate_stat_multiplier` = 1 + additive bonuses).
+- `mod_catalog.rs`: `MOD_CATALOG` with 40 cards, `find_mod`, `find_mod_by_name`.
+- `lib.rs`: `RpgPlugin` (XP grants -> attribute recompute -> damage after combat resolves -> shield recharge, in Simulate; adds `CombatPlugin` if missing).
+- Unified health: enemies now carry `game_rpg::Health` instead of `Enemy.health`; one pipeline (shields -> armor -> health) serves players and enemies. `game_ai` replaced its damage system with `engage_attackers` (being hit by a player still triggers combat), despawns on `Health::is_dead` after RPG damage resolves, and drone detonations and Gorgon laser grids / airstrikes now send `DamageEvent`s, so they actually hurt the player (closes the Phase 8 gap). `GameAiPlugin` adds `RpgPlugin` if missing. The boss keeps its own spec health pool.
+- Spec corrections:
+  - The design table lists level 64 as 407,012 XP; the OSRS formula (and the real OSRS table) gives 407,015. The table here is generated from the formula; every other level matched.
+  - Level 92 is the well-known "halfway" point but not an exact half of 13,034,431 (it is 50.0003 %); `HALFWAY_XP` is documented accordingly and tested to within 1e-5.
+  - The design catalog is titled "40 mod cards" but defines 22 (501-508, 511-515, 521-525, 531-534). The remaining 18 were authored to complete the set (509-510, 516-519 status resistances, 526-529, 535-537, Universal 541-545) using stats the game already tracks.
+  - XP is capped at 200,000,000 (the design's `saturating_add` would allow 4.29 billion).
+- Simulations updated: the AI sims now give the player Health + Shields; the end-to-end test also asserts the grunt's return fire hurts the player, and the drone test asserts the kamikaze blast deals its 60 damage.
+- Not yet done: derived sprint, melee and recoil multipliers are computed but not yet fed into parkour/combat (the speed multiplier slot is owned by status slows; a combined modifier lands with the stat pipeline), no player respawn on `DeathEvent`, status resistances from mods are stored stats only.
+- Gates: `cargo test --workspace` 378/378, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.

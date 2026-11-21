@@ -16,7 +16,7 @@ use game_combat::projectiles::PROJECTILE_GRAVITY;
 use game_combat::{
     ActiveStatusEffects, AttackFrameData, AttackPhase, BallisticProfile, FrontalShield,
     MeleeCombatState, MeleeHitEvent, MeleeInput, MeleeWeaponClass, Projectile, RangedHitEvent,
-    RangedInput, RangedWeaponArchetype, StatusEffect, StatusEffectTickEvent, StatusEffectType,
+    RangedInput, RangedWeaponArchetype, StatusEffect, StatusEffectType,
 };
 use game_core::identifiers::PlayerCharacterMarker;
 use game_core::input::{clamp_pitch, ViewAngles};
@@ -24,6 +24,7 @@ use game_core::math::wrap_angle_radians;
 use game_parkour::{
     KinematicVelocity, ParkourController, ParkourInput, ParkourSensorReadings, ParkourState,
 };
+use game_rpg::{DamageEvent, Health};
 use serde::{Deserialize, Serialize};
 
 /// Thrown grenade speed along its arc, m/s.
@@ -151,45 +152,25 @@ pub const MECHA_STOMP: AttackFrameData = AttackFrameData {
     unblockable: false,
 };
 
-/// Health and posture of an enemy.
+/// An enemy and its posture. Health lives in the shared
+/// [`game_rpg::Health`] component, so enemies and players take damage
+/// through the same pipeline.
 #[derive(Component, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Component, Debug)]
 #[require(AiBlackboard, AiPerception, AiIntent, ViewAngles)]
 pub struct Enemy {
     pub archetype: EnemyArchetype,
-    pub health: f32,
-    pub health_max: f32,
     pub posture: f32,
     pub posture_max: f32,
 }
 
 impl Enemy {
     pub fn new(archetype: EnemyArchetype) -> Self {
-        let stats = archetype_stats(archetype);
         Self {
             archetype,
-            health: stats.health,
-            health_max: stats.health,
             posture: 0.0,
-            posture_max: stats.posture_max,
+            posture_max: archetype_stats(archetype).posture_max,
         }
-    }
-
-    pub fn health_fraction(&self) -> f32 {
-        (self.health / self.health_max.max(1.0)).clamp(0.0, 1.0)
-    }
-
-    pub fn is_defeated(&self) -> bool {
-        self.health <= 0.0
-    }
-
-    /// Applies damage; returns whether this hit defeated the enemy.
-    pub fn apply_damage(&mut self, damage: f32) -> bool {
-        if self.is_defeated() || !damage.is_finite() || damage <= 0.0 {
-            return false;
-        }
-        self.health = (self.health - damage).max(0.0);
-        self.is_defeated()
     }
 }
 
@@ -349,6 +330,7 @@ pub fn spawn_enemy(commands: &mut Commands, archetype: EnemyArchetype, position:
     let mut entity = commands.spawn((
         Name::new(format!("{archetype:?}")),
         Enemy::new(archetype),
+        Health::new(stats.health),
         EnemyBrain::for_archetype(archetype),
         Transform::from_translation(position),
         RigidBody::Kinematic,
@@ -446,7 +428,7 @@ type BrainQuery<'a> = (
     Entity,
     &'a Transform,
     &'a ViewAngles,
-    &'a Enemy,
+    Option<&'a Health>,
     &'a AiPerception,
     &'a mut AiBlackboard,
     &'a mut AiIntent,
@@ -468,7 +450,7 @@ pub fn run_behavior_trees(
         entity,
         transform,
         view,
-        enemy,
+        health,
         perception,
         mut blackboard,
         mut intent,
@@ -497,7 +479,7 @@ pub fn run_behavior_trees(
         let ctx = AiContext {
             position: transform.translation,
             forward: view.forward(),
-            health_fraction: enemy.health_fraction(),
+            health_fraction: health.map_or(1.0, Health::fraction),
             alert_state: perception.alert_state,
             target,
             movement: movement_sense(sensors, state, velocity),
@@ -693,11 +675,12 @@ pub fn update_drone_flight(
     }
 }
 
-/// Charging drones blow up next to their target.
+/// Charging drones blow up next to their target, damaging it.
 pub fn detonate_charging_drones(
     mut commands: Commands,
     drones: Query<(Entity, &AiIntent, &AiBlackboard, &Transform), With<DroneFlight>>,
     mut detonations: EventWriter<DroneDetonationEvent>,
+    mut damage: EventWriter<DamageEvent>,
 ) {
     for (entity, intent, blackboard, transform) in &drones {
         let Some(target) = intent.look_at.filter(|_| intent.charge) else {
@@ -714,36 +697,33 @@ pub fn detonate_charging_drones(
                 target: blackboard.target_entity,
                 damage: DRONE_DETONATION_DAMAGE,
             });
+            if let Some(target) = blackboard.target_entity {
+                damage.send(DamageEvent {
+                    target,
+                    source: Some(entity),
+                    amount: DRONE_DETONATION_DAMAGE,
+                });
+            }
             commands.entity(entity).despawn_recursive();
         }
     }
 }
 
-/// Applies melee, ranged and status damage to enemies. Being hurt by a
-/// player engages them immediately.
-pub fn apply_damage_to_enemies(
+/// Being attacked by a player engages an enemy immediately, even if it
+/// never saw the attacker. (Damage itself is applied by the RPG pipeline.)
+pub fn engage_attackers(
     mut melee_hits: EventReader<MeleeHitEvent>,
     mut ranged_hits: EventReader<RangedHitEvent>,
-    mut status_ticks: EventReader<StatusEffectTickEvent>,
     players: Query<&Transform, With<PlayerCharacterMarker>>,
-    mut enemies: Query<(&mut Enemy, &mut AiPerception, &mut AiBlackboard)>,
+    mut enemies: Query<(&mut AiPerception, &mut AiBlackboard), With<Enemy>>,
 ) {
     let hits = melee_hits
         .read()
-        .map(|h| (h.target, Some(h.attacker), h.damage))
-        .chain(
-            ranged_hits
-                .read()
-                .map(|h| (h.target, Some(h.shooter), h.damage)),
-        )
-        .chain(status_ticks.read().map(|t| (t.target, None, t.tick.damage)))
+        .map(|h| (h.target, h.attacker))
+        .chain(ranged_hits.read().map(|h| (h.target, h.shooter)))
         .collect::<Vec<_>>();
-    for (target, attacker, damage) in hits {
-        let Ok((mut enemy, mut perception, mut blackboard)) = enemies.get_mut(target) else {
-            continue;
-        };
-        enemy.apply_damage(damage);
-        let Some(attacker) = attacker else {
+    for (target, attacker) in hits {
+        let Ok((mut perception, mut blackboard)) = enemies.get_mut(target) else {
             continue;
         };
         if let Ok(attacker_transform) = players.get(attacker) {
@@ -767,11 +747,11 @@ pub fn sync_enemy_posture(
 /// Removes defeated enemies.
 pub fn despawn_defeated_enemies(
     mut commands: Commands,
-    enemies: Query<(Entity, &Enemy, &Transform)>,
+    enemies: Query<(Entity, &Enemy, &Health, &Transform)>,
     mut defeated: EventWriter<EnemyDefeatedEvent>,
 ) {
-    for (entity, enemy, transform) in &enemies {
-        if enemy.is_defeated() {
+    for (entity, enemy, health, transform) in &enemies {
+        if health.is_dead() {
             defeated.send(EnemyDefeatedEvent {
                 enemy: entity,
                 archetype: enemy.archetype,
@@ -818,17 +798,6 @@ mod tests {
             weapon_for(EnemyArchetype::MechaEnforcer).map(|w| w.rounds_per_minute),
             Some(1100)
         );
-    }
-
-    #[test]
-    fn enemy_damage_and_defeat() {
-        let mut grunt = Enemy::new(EnemyArchetype::StreetGrunt);
-        assert!(!grunt.apply_damage(100.0));
-        assert_eq!(grunt.health_fraction(), 0.6);
-        assert!(!grunt.apply_damage(f32::NAN) && !grunt.apply_damage(-5.0));
-        assert!(grunt.apply_damage(500.0));
-        assert_eq!(grunt.health, 0.0);
-        assert!(!grunt.apply_damage(10.0), "already defeated");
     }
 
     /// Runs one tree tick with a fixed context and returns the leaves hit.

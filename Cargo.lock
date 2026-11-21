@@ -2592,6 +2592,7 @@ dependencies = [
  "game_combat",
  "game_core",
  "game_parkour",
+ "game_rpg",
  "rand 0.8.8",
  "serde",
 ]
@@ -2733,9 +2734,12 @@ name = "game_rpg"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "game_combat",
  "game_core",
+ "game_parkour",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

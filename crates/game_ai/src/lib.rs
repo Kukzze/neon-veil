@@ -19,7 +19,7 @@ pub use boss_gorgon::{
 pub use perception::{AiBlackboard, AiPerception, AlarmRaisedEvent, AlertState};
 
 use archetypes::{
-    apply_ai_intents, apply_damage_to_enemies, despawn_defeated_enemies, detonate_charging_drones,
+    apply_ai_intents, despawn_defeated_enemies, detonate_charging_drones, engage_attackers,
     run_behavior_trees, sync_enemy_posture, update_drone_flight,
 };
 use avian3d::prelude::SpatialQueryPipeline;
@@ -33,6 +33,8 @@ use game_combat::CombatPlugin;
 use game_core::CoreSimulationSet;
 use game_parkour::shapecasts::execute_parkour_spatial_probes;
 use game_parkour::ParkourPlugin;
+use game_rpg::attributes::apply_combat_damage;
+use game_rpg::RpgPlugin;
 use perception::{propagate_alarms, update_ai_perception};
 
 /// Enemy perception, decision making, boss encounter and damage intake.
@@ -41,7 +43,8 @@ use perception::{propagate_alarms, update_ai_perception};
 /// probes, so trees see this tick's surroundings), turning decisions into
 /// player-equivalent inputs; then, after combat resolves its hits in
 /// Simulate, apply damage and remove the defeated. Adds [`ParkourPlugin`] and
-/// [`CombatPlugin`] when missing; sensing needs Avian (`PhysicsPlugins`).
+/// [`CombatPlugin`] and `RpgPlugin` when missing; sensing needs Avian
+/// (`PhysicsPlugins`). Damage itself goes through the RPG health pipeline.
 pub struct GameAiPlugin;
 
 impl Plugin for GameAiPlugin {
@@ -51,6 +54,9 @@ impl Plugin for GameAiPlugin {
         }
         if !app.is_plugin_added::<CombatPlugin>() {
             app.add_plugins(CombatPlugin);
+        }
+        if !app.is_plugin_added::<RpgPlugin>() {
+            app.add_plugins(RpgPlugin);
         }
         let has_physics = resource_exists::<SpatialQueryPipeline>;
         app.register_type::<Enemy>()
@@ -86,7 +92,7 @@ impl Plugin for GameAiPlugin {
                     )
                         .in_set(CoreSimulationSet::Simulate),
                     (
-                        apply_damage_to_enemies,
+                        engage_attackers,
                         apply_damage_to_gorgon,
                         sync_enemy_posture,
                         sync_gorgon_posture,
@@ -94,6 +100,7 @@ impl Plugin for GameAiPlugin {
                         despawn_defeated_enemies,
                     )
                         .chain()
+                        .after(apply_combat_damage)
                         .after(update_melee_combat_simulation)
                         .after(apply_ranged_impacts)
                         .after(update_status_effects)

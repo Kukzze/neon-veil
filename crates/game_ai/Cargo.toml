@@ -14,3 +14,4 @@ rand.workspace = true
 game_core.workspace = true
 game_parkour.workspace = true
 game_combat.workspace = true
+game_rpg.workspace = true
