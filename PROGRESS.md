@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 5 (Switchable Camera Rig & Unified Input)
-- Last Verified Commit: f5dac66 (Phase 3); Phase 4 is the commit following it, see `git log`
-- Passing Test Count: 169 (game_core 43, game_world 9, game_combat 17, game_dev_tools 13, game_parkour 82 unit + 5 physics simulations; 0 failed)
-- Active Workstream: Phase 4 complete. Next: game_camera FPP/TPP/photo rig, game_input KBM/gamepad -> `ParkourInput`.
+- Current Active Phase: Phase 6 (Melee Combat Engine, Hitbox Sweeps, Combos & Directional Parry)
+- Last Verified Commit: 3b14b24 (Phase 4); Phase 5 is the commit following it, see `git log`
+- Passing Test Count: 225 (game_core 47, game_world 9, game_combat 17, game_dev_tools 13, game_parkour 83 + 5 sims, game_input 27, game_camera 18 + 6 end-to-end sims; 0 failed)
+- Active Workstream: Phase 5 complete. Keyboard/mouse/gamepad input now drives the parkour controller end to end, with an FPP/TPP camera following.
 - Blockers / Notes: none blocking. See the phase log below.
-- Next Immediate Action: Implement `crates/game_camera/src/lib.rs` (`CameraRigController`, `CameraPerspectiveMode`), then `cargo test -p game_camera`.
+- Next Immediate Action: Implement melee frame data and hitbox sweeps in `crates/game_combat`, then `cargo test -p game_combat`.
 
 ## Phase Log
 
@@ -57,7 +57,7 @@
 - Deferred to Phase 4: the per-tick controller system that runs state transitions and calls the integrators (needs the shapecast probes for ground/wall detection), flow state, wall-run/kick/mantle/vault.
 - Gates: `cargo test --workspace` 110/110, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 
-### Phase 4: Advanced Acrobatic Parkour (COMPLETE)
+### Phase 4: Advanced Acrobatic Parkour (COMPLETE, commit `3b14b24`)
 - `shapecasts.rs`: `ParkourSensorReadings` (spec fields + `forward`, `obstacle_distance`, `obstacle_top_height`). `sense_surroundings` runs the 7-probe array from the feet (ground 0.2/0.45 m; walls at 0.9 m, 0.85 m; knee 0.45, chest 1.15, eye 1.70 forward; top sweep from 2.2 m plus a depth return ray) against a `ProbeWorld` trait (`SpatialProbeWorld` wraps Avian's `SpatialQuery`; tests use a box world). Walkable ground <= 50 degrees, wall-run surfaces within 15 degrees of vertical. Vault Low/Mid/High <= 0.85/1.35/1.85 m and <= 1.5 m deep; deeper or taller (< 2.2 m) chest-height ledges are mantles with target = top + 0.9 m. Rays are recorded into the debug queue when the overlay is on.
 - `flow_state.rs`: `FlowState` (0-100, 1.8 s combo window, 15/s decay after it lapses, stamina 100 with 20/s regen), `FlowTier` thresholds 25/50/75 -> 1.0/1.05/1.12/x Overdrive; `consume_stamina` is free in Overdrive; `update_flow_and_stamina` on `Time<Fixed>`.
 - `kinematics.rs` additions: `wall_run_tangent`, `wall_run_velocity`, `estimate_wall_radius`, `wall_stick_acceleration`, `wall_run_sink_velocity`, `wall_kick_impulse`, `mantle_step`, `vault_height_offset`, `classify_landing`, `airborne_phase`; new constants (sink time constant 0.35 s, adhesion 1.0, hard landing 14 m/s with 0.35 s lock, roll 0.45 s, kick 0.15 s and 15 stamina, re-attach cooldown 0.3 s, vault clearance 0.15 m, `flow_overdrive_multiplier` 1.25).
@@ -78,3 +78,19 @@
 - Not yet done: air control (none; momentum is preserved in the air), WallClimb/LedgeGrab/Zipline/Grapple/Ragdoll behaviour, stamina cost for wall runs, step-up over small curbs.
 - Gates: `cargo test --workspace` 169/169, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 - Untracked previously committed prompt/scratch files (`phase1_prompt.txt`, `phase2_prompt.txt`, `copy_to_clip.ps1`, `copy_phase1_prompt.ps1`); they remain on disk and in earlier history.
+
+### Phase 5: Switchable Camera Rig & Unified Input (COMPLETE)
+- Input pipeline: leafwing `ActionState<PlayerAction>` (PreUpdate) -> `latch_action_presses` + `apply_look_input` write `ViewAngles` (PreUpdate, after leafwing) -> `build_input_packets` pushes a `PlayerInputPacket` into `PlayerInputState` (FixedPreUpdate) -> `game_parkour::controller::apply_player_input_packets` converts it to `ParkourInput` (FixedUpdate Input set, before probes) -> controller. Remote players will feed `PlayerInputState` from the network the same way.
+- `game_core::input`: `ViewAngles` (single owner of yaw/pitch, pitch clamped to +-89 degrees, `forward`, `looking_along`), `PlayerInputState` (latest + previous packet with a `fresh` flag so a press edge is applied exactly once), `clamp_pitch`.
+- `game_input`: `PlayerAction` (24 actions; Move/Look/LookRate dual-axis), `default_kbm_input_map`, `default_gamepad_input_map`, merged `default_input_map`; `LocalPlayerInput` marker (requires `ViewAngles`, `PlayerInputState`, `ActionPressLatch`) and `local_player_input_bundle`; `LookSettings` (mouse 0.0022 rad/px, stick 3.2 rad/s, invert Y); `AimAssistSettings` (5/12 degree cones, 0.40 slowdown, 0.45 magnetism), `AimAssistTarget`, `evaluate_aim_assist`, `apply_magnetism` (stick only, while aiming or moving); packet bit mapping JUMP<-Jump/Mantle, SLIDE<-Slide/Crouch, WALL_RUN<-Jump held (advisory), SPRINT, FIRE<-FireWeapon/MeleeLight, PARRY<-AimBlock; `ActionPressLatch` keeps taps shorter than one fixed tick; `bindings_io` save (creates dirs, atomic temp+rename) / load (None on missing or invalid) / `load_bindings_or_default`, default path `config/bindings.json`; `GameInputPlugin`.
+- `game_camera`: `CameraPerspectiveMode` (cycle FPP -> TPP R -> TPP L -> Wide -> FPP; photo mode exits to TPP R), `CameraRigController` (spec defaults + `target`, head-bob state, photo anchor; `following(entity)`), `tpp.rs` spring arm (`SphereCaster` trait, Avian `SpatialSphereCaster`, shoulder pivots, wide 1.8 m / 4.5 m, `(hit - 0.15).max(min)` clamp, pivot swept out from the head), `fpp.rs` (eye from feet, head bob y = 0.045 sin(2 pi phase), x = 0.022 cos(pi phase), f = v / 1.85, fades out when stationary or airborne), FOV 90 -> 108 with speed beyond sprint or Flow, first-person wall-run roll 8 degrees away from the wall, `CameraRigPlugin` (toggle in Update, rig in PostUpdate before transform propagation).
+- Design decisions / spec fixes:
+  - `ViewAngles` lives in game_core: the camera needs input (toggle, look) and input needs the view for packets, so owning yaw/pitch in either crate would create a dependency cycle.
+  - Added `PlayerAction::LookRate`: mouse motion is a per-frame delta, a stick is a rate; binding both to one `Look` axis makes stick look speed depend on frame rate.
+  - Spring arm retracts instantly and only eases out (`18 dt`); easing in both directions leaves the camera inside the wall for ~0.1 s on every occlusion.
+  - Offsets are measured from the feet (the character transform is the capsule center), and `fpp_eye_offset` is `(0, 1.68, -0.12)`: the brief's `+0.12` z would put the eye behind the head because Bevy's forward is -Z.
+  - Head-bob phase is integrated (`phase += f dt`) instead of `f * t`, so speed changes do not make the camera jump.
+  - Leafwing fills its input deserialization registry when `InputManagerPlugin` is built; `load_bindings_from_file` only works after `GameInputPlugin` is added (documented, tested).
+- End-to-end simulations (`game_camera/tests/player_pipeline.rs`, real leafwing + Avian at 64 Hz): W+Shift sprints at 12.8 m/s; Space jumps once and holding it never re-triggers; mouse look of 714 px turns 90 degrees and running follows the new forward with the camera trailing; TPP camera sits at shoulder + 2.8 m; a wall behind the player pulls the arm in front of it; V cycles to first person at eye height; Flow widens the FOV.
+- Not yet done: gamepad input is unit-tested via bindings only (no simulated gamepad entity), camera follows the 64 Hz transform without interpolation (visible stutter at high frame rates until transform interpolation lands), photo-mode free-fly controls, aim-assist targets are not yet tagged on enemies/dummies.
+- Gates: `cargo test --workspace` 225/225, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.

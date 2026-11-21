@@ -19,6 +19,7 @@ use crate::shapecasts::{
 use crate::state_machine::ParkourState;
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use game_core::input::PlayerInputState;
 use game_core::math::{sanitize_f32, sanitize_vec3, wrap_angle_radians};
 use game_core::protocol::{InputActions, PlayerInputPacket};
 
@@ -590,6 +591,20 @@ pub fn move_and_slide(
 pub fn character_cast_shape() -> Collider {
     let radius = CHARACTER_RADIUS - COLLISION_SKIN;
     Collider::capsule(radius, CHARACTER_HEIGHT - 2.0 * CHARACTER_RADIUS)
+}
+
+/// Converts each fresh packet in [`PlayerInputState`] into [`ParkourInput`].
+/// Local and remote characters both receive input this way. Without a new
+/// packet the previous held input is kept (the controller already cleared
+/// its press edges).
+pub fn apply_player_input_packets(
+    mut characters: Query<(&mut PlayerInputState, &mut ParkourInput)>,
+) {
+    for (mut state, mut input) in &mut characters {
+        if let Some((packet, previous)) = state.take_fresh() {
+            *input = ParkourInput::from_packet(&packet, previous.as_ref());
+        }
+    }
 }
 
 /// Runs [`step_parkour`] for every character and applies the motion.

@@ -16,7 +16,7 @@ pub use state_machine::ParkourState;
 
 use avian3d::prelude::SpatialQueryPipeline;
 use bevy::prelude::*;
-use controller::update_parkour_controller;
+use controller::{apply_player_input_packets, update_parkour_controller};
 use flow_state::update_flow_and_stamina;
 use game_core::{CoreGameplayPlugin, CoreSimulationSet};
 use input_buffers::update_locomotion_buffers;
@@ -50,7 +50,11 @@ impl Plugin for ParkourPlugin {
                 FixedUpdate,
                 (
                     (
-                        execute_parkour_spatial_probes.run_if(has_physics),
+                        (
+                            apply_player_input_packets,
+                            execute_parkour_spatial_probes.run_if(has_physics),
+                        )
+                            .chain(),
                         update_locomotion_buffers,
                     )
                         .in_set(CoreSimulationSet::Input),
@@ -130,6 +134,36 @@ mod tests {
         assert!(e.contains::<FlowState>());
         assert!(e.contains::<ParkourSensorReadings>());
         assert!(e.contains::<ParkourInput>());
+    }
+
+    #[test]
+    fn packets_become_parkour_input_exactly_once() {
+        use game_core::input::PlayerInputState;
+        use game_core::protocol::{InputActions, PlayerInputPacket};
+        let mut app = App::new();
+        app.add_plugins(ParkourPlugin);
+        let mut state = PlayerInputState::default();
+        state.push(PlayerInputPacket {
+            movement_vector: Vec2::new(0.0, 1.0),
+            actions: InputActions::JUMP | InputActions::SPRINT,
+            ..Default::default()
+        });
+        let e = app.world_mut().spawn((ParkourInput::default(), state)).id();
+        app.world_mut().run_schedule(FixedUpdate);
+        let input = *app.world().get::<ParkourInput>(e).expect("input");
+        assert!(input.jump_pressed && input.sprint);
+        assert!(input.move_direction.abs_diff_eq(Vec2::new(0.0, -1.0), 1e-5));
+
+        // The controller clears press edges; without a new packet they must
+        // not come back.
+        app.world_mut()
+            .get_mut::<ParkourInput>(e)
+            .expect("input")
+            .jump_pressed = false;
+        app.world_mut().run_schedule(FixedUpdate);
+        let input = *app.world().get::<ParkourInput>(e).expect("input");
+        assert!(!input.jump_pressed, "stale packet re-applied");
+        assert!(input.sprint, "held input kept");
     }
 
     #[test]

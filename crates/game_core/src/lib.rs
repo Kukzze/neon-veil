@@ -5,6 +5,7 @@
 
 pub mod debug_draw;
 pub mod identifiers;
+pub mod input;
 pub mod math;
 pub mod protocol;
 pub mod time;
@@ -43,6 +44,7 @@ impl Plugin for CoreGameplayPlugin {
             .init_resource::<CurrentNetworkTick>()
             .register_type::<PlayerCharacterMarker>()
             .register_type::<NetworkAuthority>()
+            .register_type::<input::ViewAngles>()
             .configure_sets(
                 FixedUpdate,
                 (

@@ -2616,6 +2616,10 @@ dependencies = [
  "avian3d",
  "bevy",
  "game_core",
+ "game_input",
+ "game_parkour",
+ "leafwing-input-manager",
+ "serde",
 ]
 
 [[package]]

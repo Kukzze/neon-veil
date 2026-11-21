@@ -1,8 +1,8 @@
 {
   "project": "NEON_VEIL_ZERO_PROTOCOL",
-  "active_phase": 5,
-  "completed_phases": [0, 1, 2, 3, 4],
-  "last_updated": "2026-11-21T09:30:59Z",
+  "active_phase": 6,
+  "completed_phases": [0, 1, 2, 3, 4, 5],
+  "last_updated": "2026-11-21T09:46:27Z",
   "cargo_check_status": "PASS",
   "cargo_clippy_status": "PASS",
   "cargo_test_status": "PASS",
@@ -44,6 +44,7 @@
     "phase_4": {
       "status": "completed",
       "title": "Advanced Acrobatic Parkour (Wall-Run, Wall-Kick, Mantle, Flow State)",
+      "commit": "3b14b24",
       "crate": "game_parkour",
       "tests_passed": {
         "game_parkour_unit": 82,
@@ -53,8 +54,20 @@
       "tests_failed": 0
     },
     "phase_5": {
+      "status": "completed",
+      "title": "Switchable Camera Rig (FPP / TPP / Photo) & Unified Input",
+      "crates": ["game_camera", "game_input"],
+      "tests_passed": {
+        "game_camera_unit": 18,
+        "game_camera_end_to_end": 6,
+        "game_input": 27
+      },
+      "workspace_tests_passed": 225,
+      "tests_failed": 0
+    },
+    "phase_6": {
       "status": "pending",
-      "title": "Switchable Camera Rig (FPP / TPP / Photo) & Unified Input"
+      "title": "Melee Combat Engine, Hitbox Sweeps, Combos & Directional Parry"
     }
   }
 }
