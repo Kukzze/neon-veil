@@ -2642,6 +2642,7 @@ dependencies = [
  "game_input",
  "game_parkour",
  "game_rpg",
+ "game_server",
  "game_steam",
  "game_ui",
  "game_world",

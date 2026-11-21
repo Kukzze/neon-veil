@@ -29,6 +29,7 @@ game_ai.workspace = true
 game_rpg.workspace = true
 game_economy.workspace = true
 game_world.workspace = true
+game_server.workspace = true
 game_camera.workspace = true
 game_input.workspace = true
 game_ui.workspace = true

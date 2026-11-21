@@ -123,6 +123,7 @@ game_ai = { path = "crates/game_ai" }
 game_rpg = { path = "crates/game_rpg" }
 game_economy = { path = "crates/game_economy" }
 game_world = { path = "crates/game_world" }
+game_server = { path = "crates/game_server" }
 game_camera = { path = "crates/game_camera" }
 game_input = { path = "crates/game_input" }
 game_ui = { path = "crates/game_ui" }
