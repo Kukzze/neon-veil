@@ -1,0 +1,156 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/game_client",
+    "crates/game_server",
+    "crates/game_core",
+    "crates/game_parkour",
+    "crates/game_combat",
+    "crates/game_ai",
+    "crates/game_rpg",
+    "crates/game_economy",
+    "crates/game_world",
+    "crates/game_camera",
+    "crates/game_input",
+    "crates/game_ui",
+    "crates/game_audio",
+    "crates/game_dev_tools",
+    "crates/game_steam",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Cutting Onion Studios <engineering@cuttingonionstudios.com>"]
+license = "Proprietary"
+repository = "https://github.com/CuttingOnionStudios/neon-veil"
+rust-version = "1.82.0"
+
+[workspace.dependencies]
+# Engine & ECS (Pinned to Bevy 0.15)
+bevy = { version = "0.15.1", default-features = false, features = [
+    "bevy_asset",
+    "bevy_winit",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_gltf",
+    "bevy_render",
+    "bevy_scene",
+    "bevy_ui",
+    "bevy_text",
+    "bevy_window",
+    "bevy_state",
+    "multi_threaded",
+    "png",
+    "hdr",
+    "ktx2",
+    "zstd",
+    "tonemapping_luts",
+    "default_font",
+    "webgl2",
+] }
+
+# Physics Engine (Avian3D v0.2 - Data-Oriented Bevy 0.15 Physics)
+avian3d = { version = "0.2.0", default-features = false, features = [
+    "3d",
+    "f32",
+    "parry-f32",
+    "simd",
+] }
+
+# Networking & Transport
+# renet 0.0.16 ships its netcode transport behind the `transport` feature
+# (the standalone `renet_netcode` crate only exists from renet 1.0.0 onward).
+renet = { version = "0.0.16", features = ["transport"] }
+renet_visualizer = { version = "0.0.3", features = ["bevy"] }
+bincode = "1.3.3"
+bitcode = { version = "0.6.3", features = ["serde"] }
+
+# Async & Runtime
+tokio = { version = "1.42.0", features = ["full"] }
+futures-lite = "2.5.0"
+async-channel = "2.3.1"
+
+# Serialization & Data
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
+ron = "0.8.1"
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.39", features = ["serde"] }
+
+# Database & Persistence (Dual PostgreSQL & SQLite)
+sqlx = { version = "0.8.2", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "sqlite",
+    "macros",
+    "uuid",
+    "chrono",
+    "json",
+] }
+
+# Input Management
+leafwing-input-manager = "0.16.0"
+
+# Developer GUI & Diagnostics
+bevy_egui = "0.31.1"
+egui_plot = "0.30.0"
+
+# Audio Synthesis & Playback
+kira = { version = "0.9.6", default-features = false, features = ["cpal", "symphonia"] }
+
+# Platform & Integrations
+# Workspace dependencies cannot be optional; optionality is declared per crate.
+steamworks = "0.11.0"
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+
+# Logging, Tracing & Error Handling
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+thiserror = "2.0.9"
+anyhow = "1.0.94"
+rand = "0.8.5"
+
+# Internal Workspace Crates
+game_core = { path = "crates/game_core" }
+game_parkour = { path = "crates/game_parkour" }
+game_combat = { path = "crates/game_combat" }
+game_ai = { path = "crates/game_ai" }
+game_rpg = { path = "crates/game_rpg" }
+game_economy = { path = "crates/game_economy" }
+game_world = { path = "crates/game_world" }
+game_camera = { path = "crates/game_camera" }
+game_input = { path = "crates/game_input" }
+game_ui = { path = "crates/game_ui" }
+game_audio = { path = "crates/game_audio" }
+game_dev_tools = { path = "crates/game_dev_tools" }
+game_steam = { path = "crates/game_steam" }
+
+# -----------------------------------------------------------------------------
+# Compilation Profiles
+# -----------------------------------------------------------------------------
+
+# Development Profile: Ultra-fast incremental compile times with optimized dependencies
+[profile.dev]
+opt-level = 1
+debug = 1
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Release Profile: Maximum runtime speed for end-user builds
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+overflow-checks = false
+
+# Continuous Integration Profile: Fast deterministic checks
+[profile.ci]
+inherits = "dev"
+opt-level = 0
+debug = 0
+codegen-units = 16

@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+*.pdb
+.env
+.env.*
+/web/companion/node_modules
+/web/companion/.next

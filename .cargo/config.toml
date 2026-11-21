@@ -1,0 +1,26 @@
+# Lint flags are repeated inside each target table: Cargo does not merge
+# `build.rustflags` with `target.<triple>.rustflags` (the target table wins),
+# so lint flags placed only under [build] would never be applied.
+
+# Windows Target Optimization: Prefer lld for lightning-fast link times
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
+rustflags = [
+    "-C", "target-cpu=native",
+    "-W", "rust_2021_compatibility",
+    "-W", "clippy::all",
+    "-D", "clippy::correctness",
+    "-A", "clippy::type_complexity",
+]
+
+# Linux Target Optimization: Prefer mold or lld
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+    "-C", "link-arg=-fuse-ld=mold",
+    "-C", "target-cpu=native",
+    "-W", "rust_2021_compatibility",
+    "-W", "clippy::all",
+    "-D", "clippy::correctness",
+    "-A", "clippy::type_complexity",
+]
