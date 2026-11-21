@@ -2631,6 +2631,7 @@ dependencies = [
  "anyhow",
  "avian3d",
  "bevy",
+ "bevy_egui",
  "chrono",
  "game_ai",
  "game_audio",
@@ -2776,6 +2777,9 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
+ "game_parkour",
+ "game_rpg",
+ "game_world",
  "steamworks",
 ]
 

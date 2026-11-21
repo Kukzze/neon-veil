@@ -361,3 +361,49 @@ fn players_see_each_other_as_remote_entities() {
         "remote view trails the server by the latency"
     );
 }
+
+#[test]
+fn full_client_boots_headless_and_joins_its_offline_server() {
+    use std::time::{Duration, Instant};
+    let mut app = build_client_app();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        app.update();
+        let state = app.world().resource::<ClientNetworkState>();
+        if state.status == ConnectionStatus::Connected && state.local_entity.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    for _ in 0..30 {
+        app.update();
+    }
+    let world = app.world_mut();
+    let state = world.resource::<ClientNetworkState>();
+    assert_eq!(
+        state.status,
+        ConnectionStatus::Connected,
+        "offline handshake"
+    );
+    assert!(
+        state.snapshots_received > 0,
+        "snapshots arriving from the local server"
+    );
+    assert!(world.contains_resource::<OfflineSession>());
+    assert!(world.contains_resource::<game_world::WorldChunkStreamer>());
+    assert!(world.contains_resource::<game_audio::AudioMixerSettings>());
+    assert!(world.contains_resource::<game_ui::SkillsModalState>());
+    assert!(world.contains_resource::<game_economy::GrandExchangeResource>());
+    assert!(world.contains_resource::<game_steam::PlatformServiceResource>());
+    assert_eq!(
+        world.query::<&game_ui::HudRootNode>().iter(world).count(),
+        1
+    );
+    assert!(
+        !world
+            .resource::<game_world::WorldChunkStreamer>()
+            .loaded_chunks
+            .is_empty(),
+        "chunks stream around the local player"
+    );
+}

@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe: .exe
+          - platform: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            exe: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust 1.82.0
+        uses: dtolnay/rust-toolchain@1.82.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build client and dedicated server
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin game_client --bin game_server
+
+      - name: Stage package
+        shell: bash
+        run: |
+          STAGE="NeonVeil-${{ github.ref_name }}-${{ matrix.platform }}"
+          mkdir -p "$STAGE"
+          cp "target/${{ matrix.target }}/release/game_client${{ matrix.exe }}" "$STAGE/NeonVeil${{ matrix.exe }}"
+          cp "target/${{ matrix.target }}/release/game_server${{ matrix.exe }}" "$STAGE/NeonVeilServer${{ matrix.exe }}"
+          cp -r assets "$STAGE/assets"
+          echo "STAGE=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:STAGE" -DestinationPath "$env:STAGE.zip"
+          (Get-FileHash "$env:STAGE.zip" -Algorithm SHA256).Hash.ToLower() + "  $env:STAGE.zip" | Out-File -Encoding ascii "$env:STAGE.zip.sha256"
+          "ARCHIVE=$env:STAGE.zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x "$STAGE/NeonVeil" "$STAGE/NeonVeilServer"
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+          sha256sum "$STAGE.tar.gz" > "$STAGE.tar.gz.sha256"
+          echo "ARCHIVE=$STAGE.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256

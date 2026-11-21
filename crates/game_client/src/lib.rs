@@ -1,8 +1,15 @@
-//! Game client: transports and client-side prediction against the
-//! authoritative server (in-process for offline play, UDP otherwise).
+//! Game client: app assembly, transports and client-side prediction
+//! against the authoritative server (in-process for offline play, UDP
+//! otherwise).
 
+pub mod app;
 pub mod client_network;
 pub mod transport;
+
+pub use app::{
+    add_gameplay_plugins, build_client_app, build_headless_client_app, build_windowed_client_app,
+    parse_client_args, ClientOptions, OfflineSession, SessionMode,
+};
 
 pub use client_network::{
     reconcile_with_server_state, ClientNetworkState, ClientPredictionState,

@@ -192,6 +192,11 @@ pub fn filter_by_rarity(rarity: &str) -> Vec<&'static ItemDefinition> {
         .collect()
 }
 
+/// The catalog as pretty JSON, as published to the web companion portal.
+pub fn catalog_json() -> String {
+    serde_json::to_string_pretty(MASTER_ITEM_CATALOG).expect("catalog serializes")
+}
+
 pub fn catalog_len() -> usize {
     debug_assert_eq!(MASTER_ITEM_CATALOG.len(), ITEM_COUNT);
     MASTER_ITEM_CATALOG.len()
@@ -280,6 +285,16 @@ mod tests {
         assert_eq!(find_item(2039).unwrap().rarity, "Legendary");
         assert!(find_item(2071).is_none());
         assert!(find_item(0).is_none());
+    }
+
+    #[test]
+    fn web_portal_catalog_is_current() {
+        let published = include_str!("../../../web/companion/src/data/item-catalog.json");
+        assert_eq!(
+            published.trim_end(),
+            catalog_json(),
+            "regenerate with: cargo run -p game_economy --example export_catalog > web/companion/src/data/item-catalog.json"
+        );
     }
 
     #[test]

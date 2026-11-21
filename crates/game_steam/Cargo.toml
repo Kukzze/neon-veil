@@ -10,6 +10,9 @@ rust-version.workspace = true
 bevy.workspace = true
 steamworks = { workspace = true, optional = true }
 game_core.workspace = true
+game_rpg.workspace = true
+game_parkour.workspace = true
+game_world.workspace = true
 
 [features]
 default = []

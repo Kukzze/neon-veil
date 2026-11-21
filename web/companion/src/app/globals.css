@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #030712;
+  color: #d5dbe3;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(0, 229, 255, 0.25);
+}
+
+@layer components {
+  .hud-label {
+    @apply font-mono text-[11px] uppercase tracking-hud text-mist;
+  }
+  .button-primary {
+    @apply inline-flex items-center gap-2 bg-cyan-neon px-5 py-3 font-display text-sm font-bold uppercase tracking-hud text-void transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-neon;
+  }
+  .button-ghost {
+    @apply inline-flex items-center gap-2 border border-line px-5 py-3 font-display text-sm font-semibold uppercase tracking-hud text-slate-200 transition-colors hover:border-cyan-neon/60 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-neon;
+  }
+  .data-table th {
+    @apply whitespace-nowrap border-b border-line px-3 py-2 text-left font-mono text-[11px] font-medium uppercase tracking-hud text-mist;
+  }
+  .data-table td {
+    @apply whitespace-nowrap border-b border-line/60 px-3 py-2 font-mono text-sm tabular-nums;
+  }
+  .text-input {
+    @apply w-full border border-line bg-panel px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-mist/70 focus:border-cyan-neon/70 focus:outline-none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
