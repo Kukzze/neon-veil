@@ -1,8 +1,10 @@
-//! RPG progression: skills, the OSRS XP curve, vitals and cyber-mods.
+//! RPG progression: skills, the OSRS XP curve, vitals, cyber-mods and quests.
 
 pub mod attributes;
 pub mod mod_catalog;
 pub mod mod_system;
+pub mod quest_catalog;
+pub mod quest_engine;
 pub mod skills;
 pub mod xp_table;
 
@@ -11,6 +13,12 @@ pub use attributes::{
 };
 pub use mod_catalog::{find_mod, find_mod_by_name, MOD_CATALOG};
 pub use mod_system::{CyberModCard, ModLoadout, ModLoadoutError, ModPolarity};
+pub use quest_catalog::{find_quest, MASTER_QUEST_CATALOG};
+pub use quest_engine::{
+    PlayerQuestLog, QuestCommand, QuestCompletedEvent, QuestCompletion, QuestDefinition,
+    QuestDifficulty, QuestFailedEvent, QuestStartError, QuestStartRejectedEvent, QuestStartedEvent,
+    QuestStatus, QuestStepAdvancedEvent,
+};
 pub use skills::{CharacterSkills, LevelUpEvent, SkillType, XpGrantEvent};
 
 use attributes::{apply_combat_damage, recompute_character_attributes, update_player_shields};
@@ -19,6 +27,7 @@ use game_combat::hitboxes::update_melee_combat_simulation;
 use game_combat::projectiles::{apply_ranged_impacts, update_status_effects};
 use game_combat::CombatPlugin;
 use game_core::CoreSimulationSet;
+use quest_engine::process_quest_commands;
 use skills::apply_xp_grants;
 
 /// Skills, attribute derivation, damage intake and shield recharge in the
@@ -37,13 +46,22 @@ impl Plugin for RpgPlugin {
             .register_type::<Shields>()
             .register_type::<CharacterAttributes>()
             .register_type::<ModPolarity>()
+            .register_type::<QuestDifficulty>()
+            .register_type::<QuestStatus>()
             .add_event::<XpGrantEvent>()
             .add_event::<LevelUpEvent>()
             .add_event::<DamageEvent>()
             .add_event::<DeathEvent>()
+            .add_event::<QuestCommand>()
+            .add_event::<QuestStartedEvent>()
+            .add_event::<QuestStartRejectedEvent>()
+            .add_event::<QuestStepAdvancedEvent>()
+            .add_event::<QuestCompletedEvent>()
+            .add_event::<QuestFailedEvent>()
             .add_systems(
                 FixedUpdate,
                 (
+                    process_quest_commands,
                     apply_xp_grants,
                     recompute_character_attributes,
                     apply_combat_damage

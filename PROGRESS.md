@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 10 (Multi-Step Narrative Quest Engine & 30 Detailed Quests)
-- Last Verified Commit: 94ba1e2 (Phase 8); Phase 9 is the commit following it, see `git log`
-- Passing Test Count: 378 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 38 + 8 sims, game_rpg 32; 0 failed)
-- Active Workstream: Phase 9 complete. Skills, the OSRS curve, unified health/shields for players and enemies, and the mod system are live.
+- Current Active Phase: Phase 11 (Grand Exchange Cyber-Market, Atomic Escrow & Crafting)
+- Last Verified Commit: d58c73e (Phase 9); Phase 10 is the commit following it, see `git log`
+- Passing Test Count: 393 (game_core 47, game_world 9, game_combat 77 + 13 sims, game_dev_tools 13, game_parkour 84 + 5 sims, game_input 27, game_camera 19 + 6 sims, game_ai 38 + 8 sims, game_rpg 47; 0 failed)
+- Active Workstream: Phase 10 complete. Quest engine and the 30-quest campaign are live; quest rewards feed skills directly.
 - Blockers / Notes: none blocking. History scrub deferred to Phase 16 by decision so recorded hashes stay stable. See the phase log below.
-- Next Immediate Action: Implement the quest engine in `crates/game_rpg`, then `cargo test -p game_rpg`.
+- Next Immediate Action: Implement the exchange order book and escrow in `crates/game_economy`, then `cargo test -p game_economy`.
 
 ## Phase Log
 
@@ -142,7 +142,7 @@
 - Not yet done: no navmesh (direct steering with wall-run and vault fallbacks); player health does not exist yet, so hazard and drone damage to the player are emitted as events only; Netrunner shield recharge awaits a shield system; the Mecha Enforcer reuses the character capsule; no animation/VFX hooks beyond events.
 - Gates: `cargo test --workspace` 347/347, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 
-### Phase 9: RPG Progression Engine, 8 Skills & OSRS XP Table 1-99 (COMPLETE)
+### Phase 9: RPG Progression Engine, 8 Skills & OSRS XP Table 1-99 (COMPLETE, commit `d58c73e`)
 - `xp_table.rs`: `MAX_LEVEL` 99, `MAX_XP` 13,034,431, `HALFWAY_XP` 6,517,253 (level 92), `XP_CAP` 200,000,000; `XP_TABLE` generated from the OSRS formula (no runtime floating point) and re-derived by a test for all 99 levels; `xp_to_level` (binary search), `level_to_xp`, `xp_remaining_to_next_level`, `progress_to_next_level`.
 - `skills.rs`: `SkillType` (8 skills), `CharacterSkills` (`get_xp`, `get_level`, `get_boosted_level`, `get_total_level` 8..792, `get_total_xp`, `add_xp` capped at 200M returning the new level, `boost`, `restore_boosts`; boosts keep their offset across level-ups), `LevelUpEvent`, `XpGrantEvent` + `apply_xp_grants`.
 - `attributes.rs`: `Health` (`take_damage` returns damage taken, `heal`, `is_dead`, `set_max` grants raised maximums), `Shields` (100 max, 25/s, 3 s delay restarted by every hit, `take_damage` returns bleed-through, `tick` blocked by EMP), `CharacterAttributes` derived from boosted levels and mods (Endurance +5 HP / +2 shields / +3 armor per level, Agility stamina and sprint, Cyber-Melee damage, Ballistics recoil; `DR = armor / (armor + 300)`, Acid shred carried over), `resolve_damage` (shields absorb raw damage, armor reduces only the bleed-through), `DamageEvent`, `DeathEvent`, `recompute_character_attributes` (on skill or mod change; pushes into Health, Shields and FlowState stamina), `apply_combat_damage` (melee, ranged, status ticks incl. armor shred, generic DamageEvent), `update_player_shields`.
@@ -158,3 +158,16 @@
 - Simulations updated: the AI sims now give the player Health + Shields; the end-to-end test also asserts the grunt's return fire hurts the player, and the drone test asserts the kamikaze blast deals its 60 damage.
 - Not yet done: derived sprint, melee and recoil multipliers are computed but not yet fed into parkour/combat (the speed multiplier slot is owned by status slows; a combined modifier lands with the stat pipeline), no player respawn on `DeathEvent`, status resistances from mods are stored stats only.
 - Gates: `cargo test --workspace` 378/378, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+
+### Phase 10: Multi-Step Narrative Quest Engine & 30 Detailed Quests (COMPLETE)
+- `quest_engine.rs`: `QuestDifficulty` (Novice..Grandmaster, ordered), `QuestStatus`, `QuestDefinition` (spec fields), `QuestProgress`, typed `QuestStartError` (UnknownQuest, AlreadyCompleted, AlreadyInProgress, MissingPrerequisite, SkillTooLow with required/current), `PlayerQuestLog` (`status`, `can_start_quest` checking completed -> in progress -> prerequisites -> skill levels, `start_quest` clearing earlier failures, `advance_step`, `fail_quest`, `is_completed`, `total_completed`, `current_step`), `QuestCompletion` (credits, items, level-ups from the XP payout).
+- ECS: `QuestCommand` (Start / AdvanceStep / Fail) processed by `process_quest_commands`, emitting `QuestStartedEvent`, `QuestStartRejectedEvent` (with the reason), `QuestStepAdvancedEvent`, `QuestCompletedEvent` (with credits) and `LevelUpEvent`s for skills the reward levelled; `QuestFailedEvent`. Registered in `RpgPlugin` ahead of XP grants.
+- `quest_catalog.rs`: `MASTER_QUEST_CATALOG` with all 30 spec quests (6 Novice, 8 Intermediate, 8 Experienced, 6 Master, 2 Grandmaster): titles, givers, districts, synopses, steps, failure conditions, requirements, prerequisites, XP, credits and item rewards; `find_quest`; `find_prerequisite_cycle` (DFS with visit marks).
+- Design decisions:
+  - `advance_step` returns a pure `QuestCompletion` (credits, items, level-ups) rather than the event; the command system wraps it with the player entity into `QuestCompletedEvent` + `LevelUpEvent`s, so the log stays testable without ECS.
+  - Failed quests can be retried from step 0; failure only removes the quest from the active set.
+  - Quests without a credit reward in the design carry `credit_reward: 0`; perks such as "Permanent +20 HP" are recorded as item rewards until the systems that grant them exist.
+- Verification: a one-off extraction compared every requirement level, prerequisite id, XP amount and credit value of all 30 quests against the design table; the only differences were digits inside item names (present verbatim in `item_rewards`).
+- Tests: 30 ids 1..=30 with unique titles; tiers by id range; every prerequisite exists, none self-referential, no cycles (and the detector catches an injected Q01 <-> Q03 loop); every quest has steps, failure conditions and XP; Q01 is the only root; Agility 4 cannot start Q02, Agility 5 without Q01 cannot; Q01 runs 7 steps and pays Agility +450 / Ballistics +300 (levels 5 and 4) exactly once; Q01's reward alone unlocks Q02; double start / repeat blocked; fail then retry; Q29 refuses all-87 skills, a single 87, or missing Q28, and accepts all-88 with 23-28; a maxed player completes the whole campaign 1..=30 in order; command system end to end.
+- Not yet done: credit payouts and item grants are reported but not yet deposited (wallet / inventory arrive with the economy phase); quest step triggers from gameplay (e.g. "perform 3 perfect parries") are not yet wired to world events.
+- Gates: `cargo test --workspace` 393/393, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
