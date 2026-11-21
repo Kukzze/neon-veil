@@ -10,6 +10,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Shipped binaries must run on players' CPUs, not just the build machine:
+  # this replaces the dev config's target-cpu=native (and its mold linker
+  # flag) with a portable baseline (x86-64-v2: SSE4.2 / POPCNT, 2009+).
+  RUSTFLAGS: "-C target-cpu=x86-64-v2"
 
 jobs:
   build:
