@@ -13,7 +13,8 @@ use thiserror::Error;
 pub use crate::time::NetworkTick;
 
 /// Bumped on every incompatible change to the message layout.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// v2: added `InputActions::MELEE_HEAVY`.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Bit flags carried in [`PlayerInputPacket::actions`].
 pub struct InputActions;
@@ -25,9 +26,15 @@ impl InputActions {
     pub const SPRINT: u32 = 1 << 3;
     pub const FIRE: u32 = 1 << 4;
     pub const PARRY: u32 = 1 << 5;
+    pub const MELEE_HEAVY: u32 = 1 << 6;
     /// Union of every defined flag; undefined bits are stripped on sanitize.
-    pub const ALL: u32 =
-        Self::JUMP | Self::SLIDE | Self::WALL_RUN | Self::SPRINT | Self::FIRE | Self::PARRY;
+    pub const ALL: u32 = Self::JUMP
+        | Self::SLIDE
+        | Self::WALL_RUN
+        | Self::SPRINT
+        | Self::FIRE
+        | Self::PARRY
+        | Self::MELEE_HEAVY;
 }
 
 /// One tick of player input, sent client -> server.
@@ -275,6 +282,7 @@ mod tests {
             InputActions::SPRINT,
             InputActions::FIRE,
             InputActions::PARRY,
+            InputActions::MELEE_HEAVY,
         ];
         let mut union = 0;
         for flag in flags {

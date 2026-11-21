@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 6 (Melee Combat Engine, Hitbox Sweeps, Combos & Directional Parry)
-- Last Verified Commit: 3b14b24 (Phase 4); Phase 5 is the commit following it, see `git log`
-- Passing Test Count: 225 (game_core 47, game_world 9, game_combat 17, game_dev_tools 13, game_parkour 83 + 5 sims, game_input 27, game_camera 18 + 6 end-to-end sims; 0 failed)
-- Active Workstream: Phase 5 complete. Keyboard/mouse/gamepad input now drives the parkour controller end to end, with an FPP/TPP camera following.
+- Current Active Phase: Phase 7 (Ranged Ballistics Arsenal, Recoil Springs & Status Effects)
+- Last Verified Commit: 04fef43 (Phase 5); Phase 6 is the commit following it, see `git log`
+- Passing Test Count: 262 (game_core 47, game_world 9, game_combat 47 + 7 sims, game_dev_tools 13, game_parkour 83 + 5 sims, game_input 27, game_camera 18 + 6 sims; 0 failed)
+- Active Workstream: Phase 6 complete. Melee frame data, five combo trees, parkour-chained attacks, hitbox sweeps and directional parry run in the fixed tick.
 - Blockers / Notes: none blocking. See the phase log below.
-- Next Immediate Action: Implement melee frame data and hitbox sweeps in `crates/game_combat`, then `cargo test -p game_combat`.
+- Next Immediate Action: Implement `crates/game_combat/src/ranged.rs` (ballistic profiles, recoil springs), then `cargo test -p game_combat`.
 
 ## Phase Log
 
@@ -79,7 +79,7 @@
 - Gates: `cargo test --workspace` 169/169, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 - Untracked previously committed prompt/scratch files (`phase1_prompt.txt`, `phase2_prompt.txt`, `copy_to_clip.ps1`, `copy_phase1_prompt.ps1`); they remain on disk and in earlier history.
 
-### Phase 5: Switchable Camera Rig & Unified Input (COMPLETE)
+### Phase 5: Switchable Camera Rig & Unified Input (COMPLETE, commit `04fef43`)
 - Input pipeline: leafwing `ActionState<PlayerAction>` (PreUpdate) -> `latch_action_presses` + `apply_look_input` write `ViewAngles` (PreUpdate, after leafwing) -> `build_input_packets` pushes a `PlayerInputPacket` into `PlayerInputState` (FixedPreUpdate) -> `game_parkour::controller::apply_player_input_packets` converts it to `ParkourInput` (FixedUpdate Input set, before probes) -> controller. Remote players will feed `PlayerInputState` from the network the same way.
 - `game_core::input`: `ViewAngles` (single owner of yaw/pitch, pitch clamped to +-89 degrees, `forward`, `looking_along`), `PlayerInputState` (latest + previous packet with a `fresh` flag so a press edge is applied exactly once), `clamp_pitch`.
 - `game_input`: `PlayerAction` (24 actions; Move/Look/LookRate dual-axis), `default_kbm_input_map`, `default_gamepad_input_map`, merged `default_input_map`; `LocalPlayerInput` marker (requires `ViewAngles`, `PlayerInputState`, `ActionPressLatch`) and `local_player_input_bundle`; `LookSettings` (mouse 0.0022 rad/px, stick 3.2 rad/s, invert Y); `AimAssistSettings` (5/12 degree cones, 0.40 slowdown, 0.45 magnetism), `AimAssistTarget`, `evaluate_aim_assist`, `apply_magnetism` (stick only, while aiming or moving); packet bit mapping JUMP<-Jump/Mantle, SLIDE<-Slide/Crouch, WALL_RUN<-Jump held (advisory), SPRINT, FIRE<-FireWeapon/MeleeLight, PARRY<-AimBlock; `ActionPressLatch` keeps taps shorter than one fixed tick; `bindings_io` save (creates dirs, atomic temp+rename) / load (None on missing or invalid) / `load_bindings_or_default`, default path `config/bindings.json`; `GameInputPlugin`.
@@ -94,3 +94,19 @@
 - End-to-end simulations (`game_camera/tests/player_pipeline.rs`, real leafwing + Avian at 64 Hz): W+Shift sprints at 12.8 m/s; Space jumps once and holding it never re-triggers; mouse look of 714 px turns 90 degrees and running follows the new forward with the camera trailing; TPP camera sits at shoulder + 2.8 m; a wall behind the player pulls the arm in front of it; V cycles to first person at eye height; Flow widens the FOV.
 - Not yet done: gamepad input is unit-tested via bindings only (no simulated gamepad entity), camera follows the 64 Hz transform without interpolation (visible stutter at high frame rates until transform interpolation lands), photo-mode free-fly controls, aim-assist targets are not yet tagged on enemies/dummies.
 - Gates: `cargo test --workspace` 225/225, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+
+### Phase 6: Melee Combat Engine, Hitbox Sweeps, Combos & Directional Parry (COMPLETE)
+- `melee.rs`: `MeleeWeaponClass`, `AttackPhase` (Idle/Startup/Active/Recovery/CancelWindow), `ParryResult`, `AttackFrameData` (spec fields + `knockback_direction`, `area_radius`, `attacker_dive_speed`; `total_frames`, `phase_at_frame`, cancel start clamped into recovery), `MeleeInput` (press edges + held guard; requires nothing, required by `MeleeCombatState`), `MeleeCombatState` (spec fields + tick counter, combo flag, 0.2 s attack buffer, posture break/regen timers), `start_attack`, `cancel_attack`, `can_chain_combo` (Recovery/CancelWindow), `can_cancel` (Startup/CancelWindow), `start_parry` (cancels a cancellable swing; not while broken), `is_in_perfect_parry`, `add_posture` (break -> 2 s stun, then reset; regen 12/s after 1.5 s), `resolve_incoming_attack` (+ `_from` with guard-direction flag), pure `step_melee`.
+- `combo_trees.rs`: all five spec catalogs (Katana 3, Mantis 3, Baton 2, Gauntlet 2, Whip 1), `SLIDE_UPPERCUT` (heavy while sliding, launches up), `WALL_RUN_PLUNGE` (light while wall-running, 4 m radius, 90 damage), `AERIAL_SLAM` (heavy in JumpDescent, attacker dives at 35 m/s, 100 posture), `select_attack` (parkour specials first; light chains through the tree and wraps 0 -> 1 -> 2 -> 0; heavy plays the finisher), `combo_tree_for`, `parkour_attack_for`.
+- `hitboxes.rs`: `MeleeHitEvent`, `hitbox_pose` (feet + rotation * offset), `register_new_hits` (once per swing, never self), `within_area`, `guard_covers` (120 degree frontal arc), `knockback_vector` (radial for area attacks), `apply_melee_input` (FIRE -> light, MELEE_HEAVY -> heavy, PARRY -> guard; each packet once), `update_melee_combat_simulation` (two passes: step + `SpatialQuery::shape_intersections` sweep, then resolve on dummies or fighters, perfect parry adds 40 posture to the attacker and cancels its swing, knockback into `KinematicVelocity`, floating text per damaging hit).
+- `lib.rs`: `CombatPlugin` (FixedUpdate: input in the Input set, simulation in Simulate after `update_parkour_controller`, needs Avian's spatial pipeline; adds `CoreGameplayPlugin` if missing). `spawn_floating_combat_text` extracted in `combat_dummy.rs` and shared.
+- Protocol v2: `InputActions::MELEE_HEAVY` (bit 6) added and mapped from `PlayerAction::MeleeHeavy`; `PROTOCOL_VERSION` = 2. Heavy attacks and two of the three parkour specials had no way to reach the simulation through packets.
+- Design decisions / spec fixes:
+  - Frame data is authored at 60 fps but the simulation runs at 64 Hz; frames are derived with integer math `ticks * 60 / 64` (exact, deterministic, never skips a frame). Counting one frame per tick would make every attack 6.7 % faster than authored. Verified: Katana_Light_1 (27 frames = 0.45 s) ends on tick 29; its 6 active frames get 6 ticks.
+  - Spec hitbox offsets use +Z as forward; Bevy forward is -Z, so the spec values would hit behind the attacker. The catalog stores them in Bevy convention (z negated), measured from the feet. Extents are full box sizes; the whip's "3.5 m radius" is a 7 m box limited to 3.5 m.
+  - Guard is directional: blocks and parries only count within 60 degrees of facing.
+  - Perfect parry staggers the attacker (swing cancelled) besides the 40 posture damage.
+  - Aerial Slam triggers on heavy during JumpDescent (the spec also asks for Crouch; dropped to keep the input single-button, per the Phase 6 brief).
+- Simulations (`tests/melee_sim.rs`, real Avian colliders, 64 Hz): Katana 3-hit chain on a dummy deals exactly 48 + 56 + 135 with floating text and DPS, and the finisher breaks its posture; out-of-reach swing whiffs; guard on tick 1 (109 ms) is a PerfectParry (0 damage, attacker +40 posture, swing cancelled); guard on tick 0 (125 ms) blocks 70 %; a guard facing away takes the full hit; Wall-Run Plunge hits the dummy within 4 m but not one inside the box corner; Aerial Slam sets vy = -35 keeping planar momentum and breaks the victim's posture.
+- Not yet done: fighters have no health pool yet (`MeleeHitEvent` carries the damage; health lands with RPG/AI phases), dummies do not move from knockback (kinematic), no critical hits, dodge roll is bound but has no mechanics, AI enemies do not attack yet (Phase 8 writes `MeleeInput`).
+- Gates: `cargo test --workspace` 262/262, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.

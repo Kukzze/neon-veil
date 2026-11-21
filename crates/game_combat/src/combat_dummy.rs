@@ -320,6 +320,21 @@ pub fn spawn_combat_dummy_arena(
     commands.insert_resource(dummy_materials);
 }
 
+/// Spawns a floating damage number above a target centered at `target_center`.
+pub fn spawn_floating_combat_text(
+    commands: &mut Commands,
+    target_center: Vec3,
+    damage: f32,
+    is_critical: bool,
+) {
+    let origin = target_center + Vec3::Y * FLOATING_TEXT_SPAWN_OFFSET;
+    commands.spawn((
+        Name::new("floating_combat_text"),
+        Transform::from_translation(origin),
+        FloatingCombatText::new(damage, is_critical, origin),
+    ));
+}
+
 /// Applies queued [`DummyDamageEvent`]s and spawns floating combat text.
 pub fn apply_dummy_damage_events(
     mut commands: Commands,
@@ -340,12 +355,12 @@ pub fn apply_dummy_damage_events(
             event.is_critical,
             event.posture_damage,
         );
-        let origin = transform.translation + Vec3::Y * FLOATING_TEXT_SPAWN_OFFSET;
-        commands.spawn((
-            Name::new("floating_combat_text"),
-            Transform::from_translation(origin),
-            FloatingCombatText::new(outcome.damage, outcome.is_critical, origin),
-        ));
+        spawn_floating_combat_text(
+            &mut commands,
+            transform.translation,
+            outcome.damage,
+            outcome.is_critical,
+        );
     }
 }
 
