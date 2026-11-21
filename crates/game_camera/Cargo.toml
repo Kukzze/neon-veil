@@ -14,3 +14,4 @@ serde.workspace = true
 leafwing-input-manager.workspace = true
 game_input.workspace = true
 game_parkour.workspace = true
+game_combat.workspace = true

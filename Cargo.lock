@@ -2615,6 +2615,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "game_combat",
  "game_core",
  "game_input",
  "game_parkour",

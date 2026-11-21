@@ -44,6 +44,18 @@ pub const VAULT_MIN_INPUT_ALIGNMENT: f32 = 0.7;
 /// Extra horizontal travel past the obstacle before a vault ends, m.
 pub const VAULT_EXIT_MARGIN: f32 = 0.1;
 
+/// Scales a character's ground movement speed (e.g. 0.55 under Cryo
+/// Glitch). Written by gameplay systems; absent means 1.0.
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
+#[reflect(Component, Default, Debug, PartialEq)]
+pub struct MovementSpeedMultiplier(pub f32);
+
+impl Default for MovementSpeedMultiplier {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
 /// Movement intent for one fixed tick.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
 #[reflect(Component, Default, Debug, PartialEq)]
@@ -155,6 +167,8 @@ pub struct StepContext<'a> {
     pub dt: f32,
     /// Capsule center.
     pub position: Vec3,
+    /// Movement speed scale from status effects (1.0 = normal).
+    pub speed_multiplier: f32,
 }
 
 #[inline]
@@ -219,10 +233,11 @@ fn grounded_step(ch: &mut ParkourCharacter, ctx: &StepContext) -> ParkourMotion 
         return motion;
     }
 
+    let slow = sanitize_f32(ctx.speed_multiplier).clamp(0.0, 1.0);
     let direction = if input.crouch {
-        input.move_direction.clamp_length_max(1.0) * CROUCH_SPEED_FACTOR
+        input.move_direction.clamp_length_max(1.0) * CROUCH_SPEED_FACTOR * slow
     } else {
-        input.move_direction
+        input.move_direction.clamp_length_max(1.0) * slow
     };
     integrate_ground_locomotion(
         ch.velocity,
@@ -624,6 +639,7 @@ pub fn update_parkour_controller(
         &mut FlowState,
         &mut ParkourController,
         &mut ParkourInput,
+        Option<&MovementSpeedMultiplier>,
     )>,
 ) {
     let dt = time.delta_secs();
@@ -642,6 +658,7 @@ pub fn update_parkour_controller(
         mut flow,
         mut ctrl,
         mut input,
+        speed_multiplier,
     ) in &mut characters
     {
         let mut tick_input = *input;
@@ -655,6 +672,7 @@ pub fn update_parkour_controller(
             constants: &constants,
             dt,
             position: transform.translation,
+            speed_multiplier: speed_multiplier.map_or(1.0, |m| m.0),
         };
         let mut v = velocity.0;
         let motion = step_parkour(
@@ -701,6 +719,7 @@ mod tests {
         controller: ParkourController,
         position: Vec3,
         constants: ParkourPhysicsConstants,
+        speed_multiplier: f32,
     }
 
     impl Sim {
@@ -709,6 +728,7 @@ mod tests {
                 state,
                 velocity,
                 position: Vec3::new(0.0, 0.93, 0.0),
+                speed_multiplier: 1.0,
                 ..Default::default()
             }
         }
@@ -726,6 +746,7 @@ mod tests {
                 constants: &self.constants,
                 dt: DT,
                 position: self.position,
+                speed_multiplier: self.speed_multiplier,
             };
             let motion = step_parkour(
                 &mut ParkourCharacter {
@@ -793,6 +814,24 @@ mod tests {
 
         let held = ParkourInput::from_packet(&packet, Some(&packet));
         assert!(!held.jump_pressed, "held jump is not a new press");
+    }
+
+    #[test]
+    fn speed_multiplier_slows_ground_movement() {
+        let mut sim = Sim::new(ParkourState::Sprinting, Vec3::ZERO);
+        sim.speed_multiplier = 0.55;
+        for _ in 0..40 {
+            sim.step(&grounded(), run_forward(true));
+        }
+        assert!(
+            (sim.velocity.z - -12.8 * 0.55).abs() < 1e-3,
+            "{:?}",
+            sim.velocity
+        );
+
+        sim.speed_multiplier = f32::NAN;
+        sim.step(&grounded(), run_forward(true));
+        assert!(sim.velocity.is_finite());
     }
 
     #[test]

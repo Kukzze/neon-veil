@@ -11,6 +11,7 @@ pub mod tpp;
 use avian3d::prelude::{SpatialQuery, SpatialQueryFilter, SpatialQueryPipeline};
 use bevy::prelude::*;
 use bevy::transform::TransformSystem;
+use game_combat::RecoilSpring;
 use game_core::input::{clamp_pitch, ViewAngles};
 use game_input::PlayerAction;
 use game_parkour::shapecasts::CHARACTER_HALF_HEIGHT;
@@ -132,7 +133,18 @@ impl CameraRigController {
 
     /// `EulerRot::YXZ` rotation from yaw, pitch and roll.
     pub fn rotation(&self) -> Quat {
-        Quat::from_euler(EulerRot::YXZ, self.yaw, clamp_pitch(self.pitch), self.roll)
+        self.rotation_with_kick(Vec2::ZERO)
+    }
+
+    /// Rotation with a recoil kick added, in degrees (`x` = pitch up,
+    /// `y` = yaw left). Pitch stays clamped to +-89 degrees.
+    pub fn rotation_with_kick(&self, kick_degrees: Vec2) -> Quat {
+        Quat::from_euler(
+            EulerRot::YXZ,
+            self.yaw + kick_degrees.y.to_radians(),
+            clamp_pitch(self.pitch + kick_degrees.x.to_radians()),
+            self.roll,
+        )
     }
 
     /// Applies a pending `target_mode` change.
@@ -205,6 +217,7 @@ type TargetQuery<'a> = (
     Option<&'a KinematicVelocity>,
     Option<&'a ParkourState>,
     Option<&'a FlowState>,
+    Option<&'a RecoilSpring>,
 );
 
 /// Places every rig camera relative to its target.
@@ -227,7 +240,8 @@ pub fn update_camera_rig(
         let Some(target) = rig.target else {
             continue;
         };
-        let Ok((target_transform, view, velocity, state, flow)) = targets.get(target) else {
+        let Ok((target_transform, view, velocity, state, flow, recoil)) = targets.get(target)
+        else {
             continue;
         };
 
@@ -245,7 +259,8 @@ pub fn update_camera_rig(
 
         let feet = target_transform.translation - Vec3::Y * CHARACTER_HALF_HEIGHT;
         let planar_speed = velocity.map_or(0.0, KinematicVelocity::planar_speed);
-        let rotation = rig.rotation();
+        let kick = recoil.map_or(Vec2::ZERO, |r| r.current_offset);
+        let rotation = rig.rotation_with_kick(kick);
 
         let position = match rig.current_mode {
             CameraPerspectiveMode::FirstPerson => {
@@ -350,6 +365,21 @@ mod tests {
         assert_eq!(r.min_arm_length, 0.4);
         assert_eq!(r.spherecast_radius, 0.22);
         assert_eq!(r.field_of_view, 90.0);
+    }
+
+    #[test]
+    fn recoil_kick_pitches_the_view_up() {
+        let r = CameraRigController::default();
+        let rest = r.rotation() * Vec3::NEG_Z;
+        let kicked = r.rotation_with_kick(Vec2::new(2.0, 0.0)) * Vec3::NEG_Z;
+        assert!(kicked.y > rest.y);
+        assert!((kicked.angle_between(rest).to_degrees() - 2.0).abs() < 1e-3);
+        let clamped = CameraRigController {
+            pitch: 1.55,
+            ..Default::default()
+        }
+        .rotation_with_kick(Vec2::new(10.0, 0.0));
+        assert!((clamped * Vec3::Y).y > 0.0, "kick never flips the camera");
     }
 
     #[test]

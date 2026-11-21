@@ -59,6 +59,7 @@ pub enum ParryTelegraphPhase {
 
 /// A damageable training target that never dies and resets when left alone.
 #[derive(Component, Debug, Clone)]
+#[require(crate::status_effects::ActiveStatusEffects)]
 pub struct CombatDummy {
     pub max_health: f32,
     pub current_health: f32,

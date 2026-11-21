@@ -7,7 +7,7 @@ pub mod kinematics;
 pub mod shapecasts;
 pub mod state_machine;
 
-pub use controller::{ParkourController, ParkourInput};
+pub use controller::{MovementSpeedMultiplier, ParkourController, ParkourInput};
 pub use flow_state::FlowState;
 pub use input_buffers::LocomotionBuffer;
 pub use kinematics::{KinematicVelocity, ParkourPhysicsConstants};
@@ -46,6 +46,7 @@ impl Plugin for ParkourPlugin {
             .register_type::<ParkourSensorReadings>()
             .register_type::<ParkourInput>()
             .register_type::<ParkourController>()
+            .register_type::<MovementSpeedMultiplier>()
             .add_systems(
                 FixedUpdate,
                 (

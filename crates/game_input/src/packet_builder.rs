@@ -54,7 +54,7 @@ pub struct ActionPressLatch {
 }
 
 /// Maps each packet bit to the actions that set it.
-const ACTION_BITS: [(u32, &[PlayerAction]); 7] = [
+const ACTION_BITS: [(u32, &[PlayerAction]); 8] = [
     (
         InputActions::JUMP,
         &[PlayerAction::Jump, PlayerAction::Mantle],
@@ -73,6 +73,7 @@ const ACTION_BITS: [(u32, &[PlayerAction]); 7] = [
     ),
     (InputActions::PARRY, &[PlayerAction::AimBlock]),
     (InputActions::MELEE_HEAVY, &[PlayerAction::MeleeHeavy]),
+    (InputActions::RELOAD, &[PlayerAction::Reload]),
 ];
 
 fn bits_where(test: impl Fn(&PlayerAction) -> bool) -> u32 {

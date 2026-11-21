@@ -7,6 +7,6 @@
 /web/companion/.next
 
 # Prompt and scratch scripts
-phase*_prompt.txt
+*_prompt.txt
 copy_*.ps1
 
