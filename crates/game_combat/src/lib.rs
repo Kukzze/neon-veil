@@ -14,7 +14,9 @@ pub use hitboxes::MeleeHitEvent;
 pub use melee::{
     AttackFrameData, AttackPhase, MeleeCombatState, MeleeInput, MeleeWeaponClass, ParryResult,
 };
-pub use projectiles::{Projectile, RangedHitEvent, RangedImpactEvent, RangedInput, ShotFiredEvent};
+pub use projectiles::{
+    FrontalShield, Projectile, RangedHitEvent, RangedImpactEvent, RangedInput, ShotFiredEvent,
+};
 pub use ranged::{BallisticProfile, RangedWeaponArchetype};
 pub use recoil::RecoilSpring;
 pub use status_effects::{
@@ -55,6 +57,7 @@ impl Plugin for CombatPlugin {
             .register_type::<RangedWeaponArchetype>()
             .register_type::<RangedInput>()
             .register_type::<Projectile>()
+            .register_type::<FrontalShield>()
             .register_type::<RecoilSpring>()
             .register_type::<ActiveStatusEffects>()
             .register_type::<StatusEffectType>()

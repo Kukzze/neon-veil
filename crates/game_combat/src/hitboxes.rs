@@ -228,6 +228,7 @@ pub fn update_melee_combat_simulation(
                     attack.posture_damage,
                     &mut posture_to_attacker,
                     covered,
+                    attack.unblockable,
                 );
                 let scale = match result {
                     ParryResult::PerfectParry => 0.0,

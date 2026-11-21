@@ -42,6 +42,35 @@ pub struct RangedInput {
     pub last_packet_tick: Option<NetworkTick>,
 }
 
+/// Energy shield covering the front of a fighter: ranged impacts landing
+/// within `half_angle_degrees` of its facing are deflected (no damage, no
+/// status effect).
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
+#[reflect(Component, Debug, PartialEq)]
+pub struct FrontalShield {
+    pub half_angle_degrees: f32,
+}
+
+impl Default for FrontalShield {
+    fn default() -> Self {
+        Self {
+            half_angle_degrees: 70.0,
+        }
+    }
+}
+
+impl FrontalShield {
+    /// Whether an impact at `point` on a target at `target` lands on the
+    /// shielded front.
+    pub fn covers(&self, target: &Transform, point: Vec3) -> bool {
+        let forward = target.rotation * Vec3::NEG_Z;
+        let forward = Vec3::new(forward.x, 0.0, forward.z).normalize_or_zero();
+        let offset = point - target.translation;
+        let offset = Vec3::new(offset.x, 0.0, offset.z).normalize_or_zero();
+        offset != Vec3::ZERO && forward.dot(offset) >= self.half_angle_degrees.to_radians().cos()
+    }
+}
+
 /// A round in flight.
 #[derive(Component, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Component, Debug)]
@@ -74,6 +103,8 @@ pub struct RangedHitEvent {
     pub damage: f32,
     pub headshot: bool,
     pub status_applied: Option<StatusEffectType>,
+    /// Stopped by a frontal shield.
+    pub deflected: bool,
 }
 
 /// A trigger pull, for audio / VFX / networking.
@@ -265,7 +296,11 @@ pub fn apply_ranged_impacts(
     mut impacts: EventReader<RangedImpactEvent>,
     mut dummies: Query<(&mut CombatDummy, &Transform, &mut ActiveStatusEffects)>,
     mut fighters: Query<
-        (&Transform, Option<&mut ActiveStatusEffects>),
+        (
+            &Transform,
+            Option<&mut ActiveStatusEffects>,
+            Option<&FrontalShield>,
+        ),
         (With<MeleeCombatState>, Without<CombatDummy>),
     >,
     mut hits: EventWriter<RangedHitEvent>,
@@ -286,7 +321,18 @@ pub fn apply_ranged_impacts(
                     effects.apply_effect(StatusEffect::new(effect_type));
                 }
                 (transform.translation, outcome.damage, headshot)
-            } else if let Ok((transform, effects)) = fighters.get_mut(impact.target) {
+            } else if let Ok((transform, effects, shield)) = fighters.get_mut(impact.target) {
+                if shield.is_some_and(|s| s.covers(transform, impact.point)) {
+                    hits.send(RangedHitEvent {
+                        shooter: impact.shooter,
+                        target: impact.target,
+                        damage: 0.0,
+                        headshot: false,
+                        status_applied: None,
+                        deflected: true,
+                    });
+                    continue;
+                }
                 let headshot = is_headshot(impact.point, transform.translation);
                 let damage = impact.damage
                     * if headshot {
@@ -316,6 +362,7 @@ pub fn apply_ranged_impacts(
             damage,
             headshot,
             status_applied: status,
+            deflected: false,
         });
     }
 }

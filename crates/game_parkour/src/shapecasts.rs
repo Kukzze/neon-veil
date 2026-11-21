@@ -179,6 +179,9 @@ pub fn sense_surroundings(
         (None, Some(c)) => c.distance,
         (None, None) => return readings,
     };
+    // Recorded before the top sweep so blocked-but-unclimbable walls still
+    // report how close they are.
+    readings.obstacle_distance = front_distance;
 
     // 7. Top sweep just past the front face.
     let probe_x = front_distance + TOP_PROBE_INSET;
@@ -206,7 +209,6 @@ pub fn sense_surroundings(
     // matters when the obstacle's top is below the eye probe.
     let head_clear = eye.is_none() || top_height >= EYE_PROBE_HEIGHT - 0.05;
 
-    readings.obstacle_distance = front_distance;
     readings.obstacle_top_height = top_height;
     readings.vault_depth = depth;
 
@@ -446,6 +448,10 @@ pub(crate) mod tests {
     #[test]
     fn tall_wall_offers_nothing() {
         let r = sense(&obstacle(6.0, 0.5, 0.6), Vec3::ZERO);
+        assert!(
+            (r.obstacle_distance - 0.6).abs() < 1e-4,
+            "still reports the blocking wall"
+        );
         assert!(!r.can_vault_low && !r.can_vault_mid && !r.can_vault_high);
         assert!(!r.can_ledge_mantle);
     }

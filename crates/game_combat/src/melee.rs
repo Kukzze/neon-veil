@@ -46,6 +46,8 @@ pub enum MeleeWeaponClass {
     ShockBaton,
     KineticHeavyGauntlet,
     MonofilamentWhip,
+    /// Apex Enforcer Gorgon's dual thermal claymores.
+    ThermalClaymores,
 }
 
 /// Phase of the current swing.
@@ -104,6 +106,8 @@ pub struct AttackFrameData {
     /// When positive, the attacker is driven downward at this speed when the
     /// attack starts.
     pub attacker_dive_speed: f32,
+    /// Defeats a normal block; only a perfect parry stops it.
+    pub unblockable: bool,
 }
 
 impl AttackFrameData {
@@ -321,11 +325,18 @@ impl MeleeCombatState {
         incoming_posture: f32,
         attacker_posture: &mut f32,
     ) -> (ParryResult, f32) {
-        self.resolve_incoming_attack_from(incoming_damage, incoming_posture, attacker_posture, true)
+        self.resolve_incoming_attack_from(
+            incoming_damage,
+            incoming_posture,
+            attacker_posture,
+            true,
+            false,
+        )
     }
 
     /// Resolves a hit. A guard only counts when `guard_covers_attacker`
-    /// (the attacker is in front). Perfect parries add
+    /// (the attacker is in front); an `unblockable` attack goes through a
+    /// normal block but is still stopped by a perfect parry. Perfect parries add
     /// [`PERFECT_PARRY_POSTURE_DAMAGE`] to `attacker_posture`. Returns the
     /// result and the damage that gets through.
     pub fn resolve_incoming_attack_from(
@@ -334,13 +345,14 @@ impl MeleeCombatState {
         incoming_posture: f32,
         attacker_posture: &mut f32,
         guard_covers_attacker: bool,
+        unblockable: bool,
     ) -> (ParryResult, f32) {
         let damage = sanitize_f32(incoming_damage).max(0.0);
         let posture = sanitize_f32(incoming_posture).max(0.0);
         if guard_covers_attacker && self.is_in_perfect_parry() {
             *attacker_posture += PERFECT_PARRY_POSTURE_DAMAGE;
             (ParryResult::PerfectParry, 0.0)
-        } else if guard_covers_attacker && self.is_parrying {
+        } else if guard_covers_attacker && self.is_parrying && !unblockable {
             self.add_posture(posture * BLOCK_POSTURE_FRACTION);
             (ParryResult::Blocked, damage * BLOCK_DAMAGE_FRACTION)
         } else {
@@ -651,12 +663,26 @@ mod tests {
         assert_eq!(open.posture_current, 22.0);
 
         let mut flanked = parrying_for(0.05);
-        let (result, damage) = flanked.resolve_incoming_attack_from(48.0, 22.0, &mut p, false);
+        let (result, damage) =
+            flanked.resolve_incoming_attack_from(48.0, 22.0, &mut p, false, false);
         assert_eq!(
             (result, damage),
             (ParryResult::Hit, 48.0),
             "guard faces the wrong way"
         );
+    }
+
+    #[test]
+    fn unblockable_beats_a_block_but_not_a_perfect_parry() {
+        let mut late = parrying_for(0.2);
+        let mut p = 0.0;
+        let (result, damage) = late.resolve_incoming_attack_from(80.0, 30.0, &mut p, true, true);
+        assert_eq!((result, damage), (ParryResult::Hit, 80.0));
+        assert_eq!(late.posture_current, 30.0, "full posture damage");
+
+        let mut perfect = parrying_for(0.05);
+        let (result, damage) = perfect.resolve_incoming_attack_from(80.0, 30.0, &mut p, true, true);
+        assert_eq!((result, damage), (ParryResult::PerfectParry, 0.0));
     }
 
     #[test]

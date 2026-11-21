@@ -1,8 +1,8 @@
 {
   "project": "NEON_VEIL_ZERO_PROTOCOL",
-  "active_phase": 8,
-  "completed_phases": [0, 1, 2, 3, 4, 5, 6, 7],
-  "last_updated": "2026-11-21T10:16:24Z",
+  "active_phase": 9,
+  "completed_phases": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  "last_updated": "2026-11-21T10:36:20Z",
   "cargo_check_status": "PASS",
   "cargo_clippy_status": "PASS",
   "cargo_test_status": "PASS",
@@ -81,6 +81,7 @@
     "phase_7": {
       "status": "completed",
       "title": "Ranged Ballistics Arsenal, Recoil Springs & Status Effects",
+      "commit": "c125c85",
       "crate": "game_combat",
       "tests_passed": {
         "game_combat_unit": 76,
@@ -90,8 +91,19 @@
       "tests_failed": 0
     },
     "phase_8": {
+      "status": "completed",
+      "title": "Enemy AI Archetypes, Behavior Trees & Combat Arena",
+      "crate": "game_ai",
+      "tests_passed": {
+        "game_ai_unit": 39,
+        "game_ai_simulations": 8
+      },
+      "workspace_tests_passed": 347,
+      "tests_failed": 0
+    },
+    "phase_9": {
       "status": "pending",
-      "title": "Enemy AI Archetypes, Behavior Trees & Combat Arena"
+      "title": "RPG Progression Engine, 8 Skills & OSRS XP Table 1-99"
     }
   }
 }

@@ -36,6 +36,7 @@ const fn attack(
         knockback_direction: FORWARD,
         area_radius: 0.0,
         attacker_dive_speed: 0.0,
+        unblockable: false,
     }
 }
 
@@ -155,6 +156,50 @@ pub static MONOFILAMENT_WHIP_COMBO_TREE: &[AttackFrameData] = &[AttackFrameData 
     )
 }];
 
+/// Gorgon's overclocked 4-hit chain; the closing sweep is unblockable
+/// (telegraphed red): only a perfect parry stops it.
+pub static THERMAL_CLAYMORE_COMBO_TREE: &[AttackFrameData] = &[
+    attack(
+        "Claymore_Rising_Cut",
+        [8, 6, 12, 16],
+        120.0,
+        30.0,
+        6.0,
+        Vec3::new(1.6, 0.8, 2.2),
+        Vec3::new(0.0, 1.2, -1.4),
+    ),
+    attack(
+        "Claymore_Cross_Cut",
+        [7, 6, 12, 16],
+        120.0,
+        30.0,
+        6.0,
+        Vec3::new(1.8, 0.6, 2.2),
+        Vec3::new(0.0, 1.1, -1.4),
+    ),
+    attack(
+        "Claymore_Overhead",
+        [10, 7, 14, 18],
+        160.0,
+        45.0,
+        9.0,
+        Vec3::new(1.2, 1.4, 2.4),
+        Vec3::new(0.0, 1.2, -1.6),
+    ),
+    AttackFrameData {
+        unblockable: true,
+        ..attack(
+            "Claymore_Red_Sweep",
+            [16, 8, 20, 26],
+            220.0,
+            60.0,
+            14.0,
+            Vec3::new(4.0, 0.8, 3.0),
+            Vec3::new(0.0, 0.8, -1.4),
+        )
+    },
+];
+
 /// Heavy attack out of a slide: launches the target upward.
 pub const SLIDE_UPPERCUT: AttackFrameData = AttackFrameData {
     knockback_direction: Vec3::new(0.0, 1.0, -0.3),
@@ -223,6 +268,7 @@ pub fn combo_tree_for(class: MeleeWeaponClass) -> &'static [AttackFrameData] {
         MeleeWeaponClass::ShockBaton => SHOCK_BATON_COMBO_TREE,
         MeleeWeaponClass::KineticHeavyGauntlet => KINETIC_GAUNTLET_COMBO_TREE,
         MeleeWeaponClass::MonofilamentWhip => MONOFILAMENT_WHIP_COMBO_TREE,
+        MeleeWeaponClass::ThermalClaymores => THERMAL_CLAYMORE_COMBO_TREE,
     }
 }
 
@@ -299,6 +345,7 @@ mod tests {
             SHOCK_BATON_COMBO_TREE,
             KINETIC_GAUNTLET_COMBO_TREE,
             MONOFILAMENT_WHIP_COMBO_TREE,
+            THERMAL_CLAYMORE_COMBO_TREE,
         ]
         .iter()
         .flat_map(|tree| tree.iter().copied())
