@@ -2785,11 +2785,16 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "game_audio",
  "game_combat",
  "game_core",
  "game_economy",
+ "game_input",
  "game_parkour",
  "game_rpg",
+ "leafwing-input-manager",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

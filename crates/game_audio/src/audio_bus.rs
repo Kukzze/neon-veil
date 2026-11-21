@@ -143,6 +143,8 @@ pub struct AudioMixerSettings {
     pub ambience_volume: f32,
     pub ui_volume: f32,
     pub is_ducking_active: bool,
+    /// Player setting; when off, voice lines never duck the music.
+    pub ducking_enabled: bool,
     /// Current music duck, 1.0 = none.
     pub ducking_multiplier: f32,
 }
@@ -157,6 +159,7 @@ impl Default for AudioMixerSettings {
             ambience_volume: 0.60,
             ui_volume: 0.90,
             is_ducking_active: false,
+            ducking_enabled: true,
             ducking_multiplier: 1.0,
         }
     }
@@ -188,7 +191,7 @@ impl AudioMixerSettings {
 
     /// Moves the duck toward -6 dB while active and back to unity when not.
     pub fn tick_ducking(&mut self, dt: f32) {
-        let target = if self.is_ducking_active {
+        let target = if self.is_ducking_active && self.ducking_enabled {
             DUCKED_MUSIC_MULTIPLIER
         } else {
             1.0
@@ -343,6 +346,20 @@ mod tests {
         // A huge frame cannot overshoot.
         m.is_ducking_active = true;
         m.tick_ducking(10.0);
+        assert_eq!(m.ducking_multiplier, DUCKED_MUSIC_MULTIPLIER);
+    }
+
+    #[test]
+    fn ducking_can_be_disabled() {
+        let mut m = AudioMixerSettings {
+            is_ducking_active: true,
+            ducking_enabled: false,
+            ..default()
+        };
+        m.tick_ducking(1.0);
+        assert_eq!(m.ducking_multiplier, 1.0);
+        m.ducking_enabled = true;
+        m.tick_ducking(1.0);
         assert_eq!(m.ducking_multiplier, DUCKED_MUSIC_MULTIPLIER);
     }
 
