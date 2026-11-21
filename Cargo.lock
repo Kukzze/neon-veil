@@ -2798,6 +2798,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "game_core",
+ "game_parkour",
  "serde",
 ]
 

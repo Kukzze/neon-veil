@@ -11,3 +11,4 @@ bevy.workspace = true
 avian3d.workspace = true
 serde.workspace = true
 game_core.workspace = true
+game_parkour.workspace = true
