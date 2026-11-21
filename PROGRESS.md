@@ -1,11 +1,11 @@
 # NEON VEIL: ZERO PROTOCOL // BUILD PROGRESS
 
-- Current Active Phase: Phase 4 (Advanced Acrobatic Parkour: Wall-Run, Wall-Kick, Mantle, Flow State)
-- Last Verified Commit: f54ee17 (Phase 2); Phase 3 is the commit following it, see `git log`
-- Passing Test Count: 110 (game_core 37, game_world 9, game_combat 17, game_dev_tools 17, game_parkour 30; 0 failed)
-- Active Workstream: Phase 3 complete. Next: shapecast probe array, flow state, wall-run/kick/mantle/vault transitions, ParkourPlugin FixedUpdate controller.
+- Current Active Phase: Phase 5 (Switchable Camera Rig & Unified Input)
+- Last Verified Commit: f5dac66 (Phase 3); Phase 4 is the commit following it, see `git log`
+- Passing Test Count: 169 (game_core 43, game_world 9, game_combat 17, game_dev_tools 13, game_parkour 82 unit + 5 physics simulations; 0 failed)
+- Active Workstream: Phase 4 complete. Next: game_camera FPP/TPP/photo rig, game_input KBM/gamepad -> `ParkourInput`.
 - Blockers / Notes: none blocking. See the phase log below.
-- Next Immediate Action: Implement `crates/game_parkour/src/shapecasts.rs`, then `cargo test -p game_parkour`.
+- Next Immediate Action: Implement `crates/game_camera/src/lib.rs` (`CameraRigController`, `CameraPerspectiveMode`), then `cargo test -p game_camera`.
 
 ## Phase Log
 
@@ -44,7 +44,7 @@
 - Deferred to later phases: on-screen FCT rendering (HUD), `/heal` and `/set_skill` handlers (already broadcast), god_mode/noclip effects (parkour reads the flags), shapecast producers (Phase 4 probes), LivePhysicsTuning -> parkour constants sync.
 - Gates: game_world 9/9, game_combat 17/17, game_dev_tools 15/15 (incl. a headless full-plugin smoke test), game_core 37/37 regression, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
 
-### Phase 3: Core Parkour Locomotion Engine (COMPLETE)
+### Phase 3: Core Parkour Locomotion Engine (COMPLETE, commit `f5dac66`)
 - `state_machine.rs`: `ParkourState` (22 variants; the design docs call it a "20-state" machine but list 22), reflected, serde, `Default = Idle`, `ALL` table. Predicates `is_grounded`, `is_airborne`, `is_wall_interacting`, `is_vaulting` (mutually exclusive, tested for every variant) and `can_slide` (state gate only: grounded `Sprinting`; speed is checked by `kinematics::can_begin_slide`).
 - `kinematics.rs`: `KinematicVelocity` (sanitizing `new`/`set`, planar helpers); `ParkourPhysicsConstants` with the spec defaults plus `slide_kinetic_friction` (0.035) and `ground_acceleration` (80 m/s^2, new: planar velocity approaches the input target at this rate). `project_velocity_on_surface`, `slope_angle_radians`, `compute_slope_slide_acceleration` (downslope dir + g(sin θ - μ cos θ)), `integrate_slide`, `integrate_ground_locomotion` (input is world-space XZ, already yaw-rotated), `integrate_jump` (sets vy = 9.4, keeps planar), `integrate_gravity`, `can_begin_slide`, `slide_should_end`, `sanitize_kinematic_velocities` system (writes only when repair is needed).
 - `input_buffers.rs`: `LocomotionBuffer` (coyote, jump, slide windows, `last_grounded_time`), `buffer_*`/`consume_*`/`can_coyote_jump`/`tick`, `update_locomotion_buffers` on `Time<Fixed>`.
@@ -56,3 +56,25 @@
 - Dev tools alignment: `ParkourPhysicsConstants` is the single source of truth. `LivePhysicsTuning` defaults now equal the parkour defaults (sprint 12.8, jump 9.4, wall descent 1.25, wall kick 9.2, slide friction μ 0.035; were 13.5 / 8.8 / 1.2 / 10.5 / 0.965), enforced by a test. Each slider maps 1:1 onto a parkour field (`jump_impulse` -> `jump_vertical_impulse`, `wall_run_slide_speed` -> `wall_run_sink_speed`, `wall_kick_impulse` -> `wall_kick_normal_impulse`, `slide_friction` -> `slide_kinetic_friction` with range 0.0-0.2). `seed_tuning_from_parkour` (Startup) and `apply_tuning_to_parkour` (on change) keep them in sync without clobbering configured values on the first frame. `flow_multiplier` is not mapped until Phase 4.
 - Deferred to Phase 4: the per-tick controller system that runs state transitions and calls the integrators (needs the shapecast probes for ground/wall detection), flow state, wall-run/kick/mantle/vault.
 - Gates: `cargo test --workspace` 110/110, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+
+### Phase 4: Advanced Acrobatic Parkour (COMPLETE)
+- `shapecasts.rs`: `ParkourSensorReadings` (spec fields + `forward`, `obstacle_distance`, `obstacle_top_height`). `sense_surroundings` runs the 7-probe array from the feet (ground 0.2/0.45 m; walls at 0.9 m, 0.85 m; knee 0.45, chest 1.15, eye 1.70 forward; top sweep from 2.2 m plus a depth return ray) against a `ProbeWorld` trait (`SpatialProbeWorld` wraps Avian's `SpatialQuery`; tests use a box world). Walkable ground <= 50 degrees, wall-run surfaces within 15 degrees of vertical. Vault Low/Mid/High <= 0.85/1.35/1.85 m and <= 1.5 m deep; deeper or taller (< 2.2 m) chest-height ledges are mantles with target = top + 0.9 m. Rays are recorded into the debug queue when the overlay is on.
+- `flow_state.rs`: `FlowState` (0-100, 1.8 s combo window, 15/s decay after it lapses, stamina 100 with 20/s regen), `FlowTier` thresholds 25/50/75 -> 1.0/1.05/1.12/x Overdrive; `consume_stamina` is free in Overdrive; `update_flow_and_stamina` on `Time<Fixed>`.
+- `kinematics.rs` additions: `wall_run_tangent`, `wall_run_velocity`, `estimate_wall_radius`, `wall_stick_acceleration`, `wall_run_sink_velocity`, `wall_kick_impulse`, `mantle_step`, `vault_height_offset`, `classify_landing`, `airborne_phase`; new constants (sink time constant 0.35 s, adhesion 1.0, hard landing 14 m/s with 0.35 s lock, roll 0.45 s, kick 0.15 s and 15 stamina, re-attach cooldown 0.3 s, vault clearance 0.15 m, `flow_overdrive_multiplier` 1.25).
+- `controller.rs`: `ParkourInput` (world-space move, yaw, sprint, crouch, jump/slide press edges; `from_packet` converts `PlayerInputPacket` with edge detection), `ParkourController` (requires all parkour components, so spawning it plus a `Transform` makes a character), pure `step_parkour` (priority-ordered transitions for ground, slide, air, wall-run, wall-kick, mantle, vaults, hard landing, landing roll; WallClimb/LedgeGrab/Zipline/Grapple/Ragdoll return `Hold` for future systems), `move_and_slide` (capsule collide-and-slide via `SpatialQuery::cast_shape`, 4 iterations, 2 cm skin, 3 cm ground hover), `update_parkour_controller`.
+- `lib.rs`: `ParkourPlugin` schedules probes + buffers (Input), controller -> flow (Simulate), velocity sanitizing (Sanitize); probes/controller run only when Avian's `SpatialQueryPipeline` exists.
+- `game_core::debug_draw`: `DebugShapecastQueue` moved here from game_dev_tools (game_dev_tools depends on game_parkour, so parkour could not depend on it). Added a `recording` flag set by the overlay toggle, and the queue is cleared once per fixed tick in `FixedFirst` so the latest probes are drawn on every frame instead of flickering at >64 Hz. game_dev_tools re-exports it at the old path.
+- Dev tools: `flow_multiplier` slider now maps to `flow_overdrive_multiplier`; every slider maps onto a parkour field.
+- Spec fixes:
+  - High vaults were unreachable: with the eye probe at 1.70 m, any 1.80 m obstacle blocks it, so "eye clear" rejected every High vault. The eye probe now only blocks when the obstacle's top is below eye height (still rejects a box with a wall right behind it).
+  - Top sweep starts 0.1 m past the measured front face instead of at fixed `fwd * 0.8` / `fwd * 0.6`, which miss obstacles 0.2-1.0 m away or thinner than the offset.
+  - Wall-run speed: the spec multiplies by the flow multiplier every tick (`len().max(min) * mult`), compounding 1.25x per tick. Speed is now `max(entry, min) * mult` from the speed captured at wall-run start, capped at `max_flow_speed`.
+  - Stick acceleration `-n v^2 / R`: only valid for convex walls (pillars). Curvature is now signed from the normal's rotation relative to travel; concave and flat walls get no stick (collision provides the force). Verified: without stick a pillar runner drifts 0.13 m away per second; with it they stay pressed to the wall.
+  - Wall kick: when the camera looks into the wall, its into-wall component is removed so the kick never drives the character back into the surface.
+  - Landing classification uses the vertical speed recorded before collision clipping; collide-and-slide zeroes vy on impact, which would otherwise hide every hard landing.
+  - Wall runs start only when not grounded and with vy <= 2 m/s (near apex or falling), otherwise a jump beside a wall would be cancelled immediately.
+  - Mantle snap uses constant-speed approach at 14 m/s (spec used `lerp(.., speed * dt)`, which is not a speed); arrives at < 0.04 m^2.
+- Physics simulations (`tests/acrobatics_sim.rs`, real Avian colliders, 64 Hz manual clock): sprint vault over a 0.75 m box with momentum preserved and probes recorded; 3 m wall cannot be walked through; wall run then wall kick (+15 Flow, kicked away from the wall); 12 m drop -> HardLanding -> Idle, buffered slide -> LandingRoll with Flow; jump at a 1.6 m ledge -> LedgeMantle -> standing on top.
+- Not yet done: air control (none; momentum is preserved in the air), WallClimb/LedgeGrab/Zipline/Grapple/Ragdoll behaviour, stamina cost for wall runs, step-up over small curbs.
+- Gates: `cargo test --workspace` 169/169, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --all -- --check` clean, `cargo check --workspace --locked` clean.
+- Untracked previously committed prompt/scratch files (`phase1_prompt.txt`, `phase2_prompt.txt`, `copy_to_clip.ps1`, `copy_phase1_prompt.ps1`); they remain on disk and in earlier history.

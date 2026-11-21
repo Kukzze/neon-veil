@@ -105,7 +105,11 @@ mod tests {
             app.update();
         }
 
-        assert!(app.world().resource::<DebugShapecastQueue>().is_empty());
+        // Drawing does not consume casts; CoreGameplayPlugin clears them per
+        // fixed tick (not added here), so the cast stays visible.
+        let queue = app.world().resource::<DebugShapecastQueue>();
+        assert_eq!(queue.len(), 1);
+        assert!(queue.is_recording());
         assert!(
             app.world()
                 .resource::<DebugVisualizerConfig>()

@@ -3,12 +3,14 @@
 //! `game_core` is the root of the crate graph and must never depend on any
 //! other `game_*` crate.
 
+pub mod debug_draw;
 pub mod identifiers;
 pub mod math;
 pub mod protocol;
 pub mod time;
 
 use bevy::prelude::*;
+use debug_draw::{clear_debug_shapecasts, DebugShapecastQueue};
 use identifiers::{NetworkAuthority, PlayerCharacterMarker};
 use time::{NetworkTick, NETWORK_TICK_RATE_HZ};
 
@@ -50,7 +52,13 @@ impl Plugin for CoreGameplayPlugin {
                 )
                     .chain(),
             )
-            .add_systems(FixedFirst, advance_network_tick);
+            .add_systems(
+                FixedFirst,
+                (
+                    advance_network_tick,
+                    clear_debug_shapecasts.run_if(resource_exists::<DebugShapecastQueue>),
+                ),
+            );
     }
 }
 

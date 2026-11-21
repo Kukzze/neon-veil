@@ -94,9 +94,9 @@ pub const JUMP_BUFFER_SECONDS: TuningParameter = TuningParameter {
     max: 0.30,
     default: 0.12,
 };
-/// Not yet mapped: the flow-state system arrives in Phase 4.
+/// -> `flow_overdrive_multiplier` (Flow tier 3 speed multiplier)
 pub const FLOW_MULTIPLIER: TuningParameter = TuningParameter {
-    label: "Flow Speed Multiplier",
+    label: "Flow Overdrive Multiplier",
     min: 1.0,
     max: 2.0,
     default: 1.25,
@@ -144,7 +144,7 @@ impl From<&ParkourPhysicsConstants> for LivePhysicsTuning {
             slide_friction: c.slide_kinetic_friction,
             coyote_time_seconds: c.coyote_time_duration,
             jump_buffer_seconds: c.jump_buffer_duration,
-            flow_multiplier: FLOW_MULTIPLIER.default,
+            flow_multiplier: c.flow_overdrive_multiplier,
         }
     }
 }
@@ -162,6 +162,7 @@ impl LivePhysicsTuning {
         constants.slide_kinetic_friction = clamped.slide_friction;
         constants.coyote_time_duration = clamped.coyote_time_seconds;
         constants.jump_buffer_duration = clamped.jump_buffer_seconds;
+        constants.flow_overdrive_multiplier = clamped.flow_multiplier;
     }
 
     /// Every parameter paired with its bounds, in display order.
@@ -334,11 +335,7 @@ pub fn seed_tuning_from_parkour(
     mut tuning: ResMut<LivePhysicsTuning>,
 ) {
     if let Some(constants) = constants {
-        let flow_multiplier = tuning.flow_multiplier;
-        *tuning.bypass_change_detection() = LivePhysicsTuning {
-            flow_multiplier,
-            ..LivePhysicsTuning::from(&*constants)
-        };
+        *tuning.bypass_change_detection() = LivePhysicsTuning::from(&*constants);
     }
 }
 
@@ -351,11 +348,7 @@ pub fn apply_tuning_to_parkour(
     let Some(mut constants) = constants else {
         return;
     };
-    let current = LivePhysicsTuning {
-        flow_multiplier: tuning.flow_multiplier,
-        ..LivePhysicsTuning::from(&*constants)
-    };
-    if current != *tuning {
+    if LivePhysicsTuning::from(&*constants) != *tuning {
         tuning.apply_to(&mut constants);
     }
 }
@@ -511,6 +504,7 @@ mod tests {
         assert_eq!(c.slide_kinetic_friction, 0.2, "clamped to slider max");
         assert_eq!(c.coyote_time_duration, 0.2);
         assert_eq!(c.jump_buffer_duration, 0.1);
+        assert_eq!(c.flow_overdrive_multiplier, 1.5);
         // Fields without a slider are untouched.
         assert_eq!(c.walk_speed, 5.2);
         assert_eq!(c.wall_kick_forward_impulse, 11.5);
