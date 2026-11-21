@@ -1,0 +1,98 @@
+{
+  "project": "NEON_VEIL_ZERO_PROTOCOL",
+  "version": "1.0.0",
+  "default_model_id": "eleven_multilingual_v2",
+  "dialogues": [
+    {
+      "cue_id": "TUT_00_INTRO_MONOLOGUE",
+      "speaker": "Viktor Vance",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "text": "They thought they scrubbed your memory banks clean and left you for scrap in Sector Zero. But your cyberware is still ticking. Wake up, kid. We've got a city to burn.",
+      "output_path": "assets/audio/voiceovers/tut_00_intro.ogg"
+    },
+    {
+      "cue_id": "TUT_01_REBOOT",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Neural link established. Visual cortex calibrated. Stand up, operative. The clinic security grid has been compromised.",
+      "output_path": "assets/audio/voiceovers/tut_01_reboot.ogg"
+    },
+    {
+      "cue_id": "TUT_02_SPRINT",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Emergency klaxons active. Accelerate into a sprint towards the pressurized airlock.",
+      "output_path": "assets/audio/voiceovers/tut_02_sprint.ogg"
+    },
+    {
+      "cue_id": "TUT_03_SLIDE",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Blast door closing. Build forward momentum and slide beneath the hydraulic gate.",
+      "output_path": "assets/audio/voiceovers/tut_03_slide.ogg"
+    },
+    {
+      "cue_id": "TUT_04_VAULT",
+      "speaker": "Viktor Vance",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "text": "Don't let debris slow you down! Vault straight over those concrete barriers—keep that flow going.",
+      "output_path": "assets/audio/voiceovers/tut_04_vault.ogg"
+    },
+    {
+      "cue_id": "TUT_05_WALLRUN",
+      "speaker": "Viktor Vance",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "text": "Toxic coolant leak ahead. Don't look down, kid! Hit the left wall at speed—your mag-boots will catch the plating.",
+      "output_path": "assets/audio/voiceovers/tut_05_wallrun.ogg"
+    },
+    {
+      "cue_id": "TUT_06_WALLKICK",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Elevator shaft blocked. Jump between the opposing walls in rapid succession to gain vertical altitude.",
+      "output_path": "assets/audio/voiceovers/tut_06_wallkick.ogg"
+    },
+    {
+      "cue_id": "TUT_07_MANTLE",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "High ventilation gantry detected. Jump towards the edge to mantle onto the catwalk.",
+      "output_path": "assets/audio/voiceovers/tut_07_mantle.ogg"
+    },
+    {
+      "cue_id": "TUT_08_PARRY",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Syndicate combat drone detected. Draw your blade. Time your parry exactly as its optic flashes crimson to shatter its posture.",
+      "output_path": "assets/audio/voiceovers/tut_08_parry.ogg"
+    },
+    {
+      "cue_id": "TUT_09_RANGED",
+      "speaker": "Viktor Vance",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "text": "Pick up that Smart Pistol from the weapon rack. Lock onto the three surveillance sensors overhead and drop 'em.",
+      "output_path": "assets/audio/voiceovers/tut_09_ranged.ogg"
+    },
+    {
+      "cue_id": "TUT_10_CAMERA",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "Camera telemetry operational. Press V to switch between first-person focus and third-person tactical situational awareness.",
+      "output_path": "assets/audio/voiceovers/tut_10_camera.ogg"
+    },
+    {
+      "cue_id": "TUT_11_SKILLS",
+      "speaker": "AURA",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "text": "You earned Agility experience from those maneuvers. Press K to access your neural skills interface and inspect your progression.",
+      "output_path": "assets/audio/voiceovers/tut_11_skills.ogg"
+    },
+    {
+      "cue_id": "TUT_12_EXTRACTION",
+      "speaker": "Viktor Vance",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "text": "Hook onto that zipline! Welcome to Neo-Veridia, kid. The real work starts now.",
+      "output_path": "assets/audio/voiceovers/tut_12_extraction.ogg"
+    }
+  ]
+}
