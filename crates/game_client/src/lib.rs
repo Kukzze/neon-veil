@@ -5,6 +5,7 @@
 pub mod app;
 pub mod client_network;
 pub mod transport;
+pub mod visuals;
 
 pub use app::{
     add_gameplay_plugins, build_client_app, build_headless_client_app, build_windowed_client_app,

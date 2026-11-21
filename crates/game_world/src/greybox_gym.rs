@@ -60,31 +60,36 @@ impl GreyboxMaterials {
     pub fn new(materials: &mut Assets<StandardMaterial>) -> Self {
         Self {
             grid_floor: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.15, 0.15, 0.17),
-                perceptual_roughness: 0.8,
+                base_color: Color::srgb(0.05, 0.055, 0.068),
+                // Above the reflection threshold: a readable floor, not a mirror.
+                perceptual_roughness: 0.45,
                 metallic: 0.1,
                 ..default()
             }),
             wall_run: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.1, 0.4, 0.6),
-                perceptual_roughness: 0.4,
-                metallic: 0.5,
+                base_color: Color::srgb(0.03, 0.07, 0.13),
+                perceptual_roughness: 0.22,
+                metallic: 0.85,
+                emissive: LinearRgba::rgb(0.0, 0.9, 1.5),
                 ..default()
             }),
             vault_accent: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.9, 0.6, 0.1),
-                perceptual_roughness: 0.5,
-                metallic: 0.2,
+                base_color: Color::srgb(0.10, 0.06, 0.02),
+                perceptual_roughness: 0.25,
+                metallic: 0.7,
+                emissive: LinearRgba::rgb(1.8, 0.9, 0.05),
                 ..default()
             }),
             hazard_red: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.8, 0.1, 0.1),
-                perceptual_roughness: 0.6,
+                base_color: Color::srgb(0.12, 0.02, 0.02),
+                perceptual_roughness: 0.25,
+                metallic: 0.6,
+                emissive: LinearRgba::rgb(2.6, 0.15, 0.15),
                 ..default()
             }),
             target_emissive: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.0, 1.0, 0.8),
-                emissive: LinearRgba::rgb(0.0, 5.0, 4.0),
+                base_color: Color::srgb(0.0, 0.25, 0.25),
+                emissive: LinearRgba::rgb(0.0, 7.0, 5.8),
                 ..default()
             }),
         }

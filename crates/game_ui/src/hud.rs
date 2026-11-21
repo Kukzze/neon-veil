@@ -230,10 +230,11 @@ fn ease_factor(rate: f32, dt: f32) -> f32 {
     1.0 - (-rate * dt.max(0.0)).exp()
 }
 
-fn hud_text(text: &str, size: f32, color: Color) -> impl Bundle {
+fn hud_text(font: &Handle<Font>, text: &str, size: f32, color: Color) -> impl Bundle {
     (
         Text::new(text),
         TextFont {
+            font: font.clone(),
             font_size: size,
             ..default()
         },
@@ -269,7 +270,12 @@ fn bar(parent: &mut ChildBuilder, kind: HudBarKind, color: Color, width_px: f32)
 }
 
 /// Spawns the HUD tree.
-pub fn setup_cyberpunk_hud(mut commands: Commands) {
+/// Typeface for HUD text; without it the HUD uses Bevy's default font.
+#[derive(Resource, Debug, Clone)]
+pub struct HudFont(pub Handle<Font>);
+
+pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>>) {
+    let font = hud_font.map(|f| f.0.clone()).unwrap_or_default();
     commands
         .spawn((
             Name::new("HUD"),
@@ -300,7 +306,7 @@ pub fn setup_cyberpunk_hud(mut commands: Commands) {
                     BackgroundColor(PANEL),
                 ))
                 .with_children(|panel| {
-                    panel.spawn((hud_text("N 000\u{b0}", 16.0, CYAN), CompassStripUi));
+                    panel.spawn((hud_text(&font, "N 000\u{b0}", 16.0, CYAN), CompassStripUi));
                 });
             });
 
@@ -350,7 +356,7 @@ pub fn setup_cyberpunk_hud(mut commands: Commands) {
                         top: Val::Px(-11.0),
                         ..default()
                     },
-                    hud_text("X", 18.0, Color::NONE),
+                    hud_text(&font, "X", 18.0, Color::NONE),
                     HitMarkerUi::default(),
                     Visibility::Hidden,
                 ));
@@ -375,13 +381,16 @@ pub fn setup_cyberpunk_hud(mut commands: Commands) {
                     ))
                     .with_children(|vitals| {
                         vitals.spawn((
-                            hud_text("SHIELDS 0 / 0  |  HP 0 / 0", 16.0, EMERALD),
+                            hud_text(&font, "SHIELDS 0 / 0  |  HP 0 / 0", 16.0, EMERALD),
                             HealthShieldBarUi,
                         ));
                         bar(vitals, HudBarKind::Shield, CYAN, 240.0);
                         bar(vitals, HudBarKind::Health, EMERALD, 240.0);
                         bar(vitals, HudBarKind::Stamina, AMBER, 160.0);
-                        vitals.spawn((hud_text("FLOW   0% // Base", 13.0, AMBER), FlowMeterUi));
+                        vitals.spawn((
+                            hud_text(&font, "FLOW   0% // Base", 13.0, AMBER),
+                            FlowMeterUi,
+                        ));
                         bar(vitals, HudBarKind::Flow, AMBER, 160.0);
                     });
                 bottom
@@ -393,7 +402,10 @@ pub fn setup_cyberpunk_hud(mut commands: Commands) {
                         BackgroundColor(PANEL),
                     ))
                     .with_children(|ammo| {
-                        ammo.spawn((hud_text("-- // -- [MELEE]", 26.0, CYAN), AmmoCounterUi));
+                        ammo.spawn((
+                            hud_text(&font, "-- // -- [MELEE]", 26.0, CYAN),
+                            AmmoCounterUi,
+                        ));
                     });
             });
         });

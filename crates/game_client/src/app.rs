@@ -2,7 +2,7 @@
 //! transport (in-process offline server or UDP), and the windowed
 //! presentation layer.
 
-use crate::client_network::{ClientTransportResource, LocalPredictedPlayer, PredictedVisual};
+use crate::client_network::ClientTransportResource;
 use crate::transport::RenetClientTransport;
 use crate::ClientNetworkPlugin;
 use avian3d::prelude::PhysicsPlugins;
@@ -10,11 +10,11 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 use game_ai::GameAiPlugin;
 use game_audio::AudioPlugin;
-use game_camera::{CameraRigController, CameraRigPlugin};
+use game_camera::CameraRigPlugin;
 use game_combat::CombatPlugin;
 use game_core::CoreGameplayPlugin;
 use game_economy::EconomyPlugin;
-use game_input::{default_input_map, local_player_input_bundle, GameInputPlugin};
+use game_input::GameInputPlugin;
 use game_parkour::ParkourPlugin;
 use game_rpg::RpgPlugin;
 use game_server::{spawn_local_server, LocalServerHandle, LoopbackNetwork};
@@ -35,14 +35,17 @@ pub enum SessionMode {
     Connect(SocketAddr),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ClientOptions {
     pub session: SessionMode,
     /// Load the greybox test gym and developer tools.
     pub greybox: bool,
+    /// Save one rendered frame here after the scene settles, then exit
+    /// (visual QA and store screenshots).
+    pub capture: Option<std::path::PathBuf>,
 }
 
-/// Parses `[--connect <address>] [--greybox]`.
+/// Parses `[--connect <address>] [--greybox] [--capture <file.png>]`.
 pub fn parse_client_args<I, S>(args: I) -> Result<ClientOptions, String>
 where
     I: IntoIterator<Item = S>,
@@ -62,6 +65,12 @@ where
                     .parse()
                     .map_err(|e| format!("invalid server address {:?}: {e}", addr.as_ref()))?;
                 options.session = SessionMode::Connect(addr);
+            }
+            "--capture" => {
+                let path = args
+                    .next()
+                    .ok_or("--capture needs a file path, e.g. shot.png")?;
+                options.capture = Some(path.as_ref().into());
             }
             other => return Err(format!("unknown argument {other:?}")),
         }
@@ -149,78 +158,103 @@ pub fn build_headless_client_app(options: ClientOptions) -> anyhow::Result<App> 
     Ok(app)
 }
 
+/// Where game assets live: `assets/` next to the executable (shipped
+/// builds), else the workspace `assets/` (development runs).
+pub fn asset_root() -> std::path::PathBuf {
+    let beside_exe = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("assets")));
+    let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    beside_exe
+        .filter(|p| p.is_dir())
+        .or_else(|| workspace.is_dir().then_some(workspace))
+        .unwrap_or_else(|| "assets".into())
+}
+
 /// The shipping client: window, renderer, egui panels and presentation.
 pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: WINDOW_TITLE.into(),
-            resolution: WindowResolution::new(WINDOW_RESOLUTION.0, WINDOW_RESOLUTION.1),
-            present_mode: PresentMode::AutoVsync,
-            ..default()
-        }),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(bevy::asset::AssetPlugin {
+                file_path: asset_root().to_string_lossy().into_owned(),
+                ..default()
+            })
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: WINDOW_TITLE.into(),
+                    resolution: WindowResolution::new(WINDOW_RESOLUTION.0, WINDOW_RESOLUTION.1),
+                    present_mode: PresentMode::AutoVsync,
+                    ..default()
+                }),
+                ..default()
+            }),
+    )
     .add_plugins(bevy_egui::EguiPlugin);
     add_gameplay_plugins(&mut app);
     if options.greybox {
         add_once(&mut app, GreyboxGymPlugin);
         add_once(&mut app, game_dev_tools::DevToolsPlugin);
+    } else {
+        add_once(&mut app, game_world::NeonDistrictPlugin);
     }
-    app.add_systems(Startup, spawn_world_lighting)
-        .add_systems(Update, attach_local_player_presentation);
+    app.add_plugins(crate::visuals::VisualsPlugin);
+    if let Some(path) = options.capture {
+        app.insert_resource(FrameCapture::new(path))
+            .add_systems(Update, capture_frame_and_exit);
+    }
     install_session(&mut app, options.session)?;
     Ok(app)
 }
 
-fn spawn_world_lighting(mut commands: Commands) {
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 12_000.0,
-            shadows_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(30.0, 60.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.55, 0.7, 0.8),
-        brightness: 180.0,
-    });
-    // The camera exists from the first frame (the HUD renders through it)
-    // and starts following the player once the session spawns them.
-    commands.spawn((
-        Camera3d::default(),
-        CameraRigController::default(),
-        Transform::from_xyz(0.0, 3.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+/// View yaw and pitch used for captures.
+pub const CAPTURE_VIEW: (f32, f32) = (0.0, -0.06);
+
+/// Saves one frame after the scene settles, then exits.
+#[derive(Resource, Debug)]
+pub struct FrameCapture {
+    pub path: std::path::PathBuf,
+    pub after_seconds: f32,
+    pub requested_at: Option<f32>,
 }
 
-/// Gives the predicted player controls and a visible body, and points the
-/// camera rig at them.
-pub fn attach_local_player_presentation(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    added: Query<Entity, Added<LocalPredictedPlayer>>,
-    mut rigs: Query<&mut CameraRigController>,
-) {
-    for player in &added {
-        for mut rig in &mut rigs {
-            rig.target = Some(player);
+impl FrameCapture {
+    pub fn new(path: std::path::PathBuf) -> Self {
+        Self {
+            path,
+            after_seconds: 6.0,
+            requested_at: None,
         }
-        commands
-            .entity(player)
-            .insert(local_player_input_bundle(default_input_map()));
-        commands.spawn((
-            PredictedVisual { source: player },
-            Mesh3d(meshes.add(Capsule3d::new(0.4, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(0.85, 0.2, 0.45),
-                perceptual_roughness: 0.4,
-                ..default()
-            })),
-            Transform::default(),
-        ));
+    }
+}
+
+fn capture_frame_and_exit(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut capture: ResMut<FrameCapture>,
+    mut exit: EventWriter<AppExit>,
+    mut views: Query<
+        &mut game_core::input::ViewAngles,
+        With<crate::client_network::LocalPredictedPlayer>,
+    >,
+) {
+    use bevy::render::view::screenshot::{save_to_disk, Screenshot};
+    // Repeatable framing: look straight up the avenue, slightly down.
+    for mut view in &mut views {
+        *view = game_core::input::ViewAngles::new(CAPTURE_VIEW.0, CAPTURE_VIEW.1);
+    }
+    let now = time.elapsed_secs();
+    match capture.requested_at {
+        None if now >= capture.after_seconds => {
+            commands
+                .spawn(Screenshot::primary_window())
+                .observe(save_to_disk(capture.path.clone()));
+            capture.requested_at = Some(now);
+        }
+        Some(at) if now - at > 2.0 => {
+            exit.send(AppExit::Success);
+        }
+        _ => {}
     }
 }
 
@@ -246,9 +280,15 @@ mod tests {
             parse_client_args(["--connect", "10.0.0.5:5000", "--greybox"]),
             Ok(ClientOptions {
                 session: SessionMode::Connect(addr),
-                greybox: true
+                greybox: true,
+                capture: None
             })
         );
+        assert_eq!(
+            parse_client_args(["--capture", "shot.png"]).map(|o| o.capture),
+            Ok(Some("shot.png".into()))
+        );
+        assert!(parse_client_args(["--capture"]).is_err());
         assert!(parse_client_args(["--connect"]).is_err());
         assert!(parse_client_args(["--connect", "not-an-address"]).is_err());
         assert!(parse_client_args(["--fullscreen"]).is_err());

@@ -9,7 +9,7 @@ pub mod inventory_ui;
 pub mod settings_ui;
 pub mod skills_ui;
 
-pub use hud::{HudObjective, HudRootNode};
+pub use hud::{HudFont, HudObjective, HudRootNode};
 pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
 pub use settings_ui::{SettingsModalState, SettingsTab, UserSettingsConfig, UserSettingsPath};
 pub use skills_ui::{SkillRow, SkillsModalState, SkillsSummary};

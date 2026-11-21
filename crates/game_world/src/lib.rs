@@ -5,6 +5,7 @@ pub mod chunk_loader;
 pub mod district_manifest;
 pub mod greybox_gym;
 pub mod lod_system;
+pub mod neon_district;
 pub mod procedural_streets;
 pub mod spatial_index;
 
@@ -15,6 +16,7 @@ pub use chunk_loader::{
 pub use district_manifest::{get_district_at_position, DistrictId, DistrictZone, DISTRICT_CATALOG};
 pub use greybox_gym::GreyboxGymPlugin;
 pub use lod_system::{LODComponent, LODLevel, LODQuality, LODSettings};
+pub use neon_district::{generate_district_layout, NeonDistrictPiece, NeonDistrictPlugin};
 pub use procedural_streets::{
     BounceAwning, ConveyorBelt, Skybridge, SkybridgeLayout, SteamVentGeyser, TraversalVolume,
 };

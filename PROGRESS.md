@@ -296,3 +296,11 @@ Engineering for all 17 phases is complete and verified. These remain outside the
 4. itch.io: create the `cutting-onion-studios/neon-veil` project and `butler login`; the download button points to `https://cutting-onion-studios.itch.io/neon-veil` unless `NEXT_PUBLIC_DOWNLOAD_URL` is set.
 5. Web: deploy `web/companion` and connect the leaderboard and market feeds.
 6. Repository: done. Local design notes and helper scripts were removed from every commit before the first push (code, authors, dates and messages unchanged; the final tree is identical), and the commit references in this ledger were updated to the rewritten history.
+
+## Post-release: night-city visual pass
+- `game_world::neon_district`: deterministic procedural street around the spawn (towers with lit window bands, blade signs, storefront strips with spill lights, street lamps, bounce awnings, skybridges, 220 rain puddles, a far skyline with aircraft-warning beacons), built from shared meshes and materials; tests cover determinism, a clear avenue and spawn point, light and draw budgets.
+- `game_client::visuals`: HDR camera with AgX tonemapping, bloom, deferred shading with screen-space reflections (puddles mirror the neon; asphalt stays matte), district-driven fog and rain with the sky matched to the haze, moonlight with cascaded shadows, the operative avatar (built once, feet on the ground, turns to face movement and leans into speed, lit from behind for the third-person camera), and the local player's vitals and starting kit so the HUD and panels show real data.
+- HUD typeface: JetBrains Mono (SIL OFL, `assets/fonts`), which also fixes the missing degree glyph; Rajdhani is bundled for headings. `game_client` resolves `assets/` next to the executable or in the workspace.
+- `--capture <file.png>` renders the scene for six seconds with a fixed view straight up the avenue, saves the frame and exits (visual QA and store screenshots).
+- Linux builds: the workspace Bevy features lacked a Linux window backend (`x11` / `wayland`), so winit failed to compile on Linux; both are enabled.
+- Tests: 608/608 workspace; clippy, fmt and `--locked` clean.
