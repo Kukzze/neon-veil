@@ -51,6 +51,9 @@ bevy = { version = "0.15.1", default-features = false, features = [
     "tonemapping_luts",
     "default_font",
     "webgl2",
+    # Linux window backends: winit has no platform to build for without one.
+    "x11",
+    "wayland",
 ] }
 
 # Physics Engine (Avian3D v0.2 - Data-Oriented Bevy 0.15 Physics)
