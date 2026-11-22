@@ -304,3 +304,13 @@ Engineering for all 17 phases is complete and verified. These remain outside the
 - `--capture <file.png>` renders the scene for six seconds with a fixed view straight up the avenue, saves the frame and exits (visual QA and store screenshots).
 - Linux builds: the workspace Bevy features lacked a Linux window backend (`x11` / `wayland`), so winit failed to compile on Linux; both are enabled.
 - Tests: 608/608 workspace; clippy, fmt and `--locked` clean.
+
+## Post-release: v1.1.0 gameplay, character and world pass
+
+- Movement: jumps with coyote time and jump buffer, momentum slides, state replicated through snapshot flags; server-validated checkpoint respawns.
+- Input and UI: mouse capture, pause menu with controls reference, operative profile, redesigned HUD (vitals with damage trails, compass tape, weapon card), mission panel and subtitles, one egui theme for every panel.
+- Night One: briefing, three Syndicate encounters and the Gorgon, checkpoints, death and victory screens, twelve voiced lines; first-run tutorial.
+- Audio: kira output with synthesized foley, rain and music beds, voice-line playback.
+- Operative: MakeHuman body with 86 sliders shaped on the CPU, skeleton refit, procedural animation with chest physics, texture-space garments and brows, skin detail and normal maps, fitted hair, brows, lashes and clothing, creator studio with presets and player card, co-op profile sync.
+- World: photo-scanned PBR street and facade materials with tiled UVs and generated mipmaps.
+- Tooling: tools/character rebuilds the operative, skin maps and proxies from MakeHuman (CC0) data.
