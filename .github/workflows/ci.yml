@@ -49,6 +49,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Portable CPU target: proc-macros built with target-cpu=native can
+      # crash rustc on hosted runners whose CPUs advertise unusable features.
+      RUSTFLAGS: "-C target-cpu=x86-64-v2"
     steps:
       - uses: actions/checkout@v4
 
