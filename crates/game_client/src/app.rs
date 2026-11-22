@@ -324,6 +324,7 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
     app.insert_resource(look)
         .add_plugins((
             crate::character::CharacterPlugin,
+            crate::coop::CoopPlugin,
             crate::creator::CreatorPlugin {
                 start,
                 face_view: options.creator_face,

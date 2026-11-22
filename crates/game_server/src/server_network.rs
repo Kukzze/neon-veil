@@ -16,7 +16,7 @@ use game_core::identifiers::{NetworkEntityId, PlayerCharacterMarker, PlayerId};
 use game_core::input::PlayerInputState;
 use game_core::protocol::{
     ClientMessage, EntityStateSnapshot, PlayerInputPacket, ServerMessage, ServerStateSnapshot,
-    PROTOCOL_VERSION, RESPAWN_CHECKPOINTS,
+    MAX_PROFILE_BYTES, PROTOCOL_VERSION, RESPAWN_CHECKPOINTS,
 };
 use game_core::time::{NetworkTick, FIXED_TIMESTEP_SECS, NETWORK_TICK_RATE_HZ};
 use game_core::CurrentNetworkTick;
@@ -70,6 +70,8 @@ pub struct ConnectedClient {
     pub last_processed_tick: Option<NetworkTick>,
     pub pending_inputs: BTreeMap<u64, PlayerInputPacket>,
     pub last_input: PlayerInputPacket,
+    /// Profile the player sent, replayed to players who join later.
+    pub profile: Option<Vec<u8>>,
 }
 
 impl ConnectedClient {
@@ -240,8 +242,23 @@ pub fn process_incoming_packets(
                         last_processed_tick: None,
                         pending_inputs: BTreeMap::new(),
                         last_input: PlayerInputPacket::default(),
+                        profile: None,
                     },
                 );
+                // Show the newcomer everyone already here.
+                for other in state.clients.values() {
+                    if let (true, Some(data)) =
+                        (other.player_id != player_id, other.profile.clone())
+                    {
+                        transport.send(
+                            connection,
+                            ServerMessage::Profile {
+                                player_id: other.player_id,
+                                data,
+                            },
+                        );
+                    }
+                }
                 state.connections.insert(connection, player_id);
                 transport.send(
                     connection,
@@ -282,6 +299,28 @@ pub fn process_incoming_packets(
                 transport.send(connection, ServerMessage::Pong(timestamp));
             }
             ClientMessage::Interact(_) => {}
+            ClientMessage::Profile(data) => {
+                if data.len() > MAX_PROFILE_BYTES {
+                    continue;
+                }
+                let Some(player_id) = state.connections.get(&connection).copied() else {
+                    continue;
+                };
+                if let Some(client) = state.clients.get_mut(&player_id) {
+                    client.profile = Some(data.clone());
+                }
+                let targets: Vec<ConnectionId> =
+                    state.clients.values().map(|c| c.connection).collect();
+                for target in targets {
+                    transport.send(
+                        target,
+                        ServerMessage::Profile {
+                            player_id,
+                            data: data.clone(),
+                        },
+                    );
+                }
+            }
             ClientMessage::Respawn(index) => {
                 let Some(&point) = RESPAWN_CHECKPOINTS.get(usize::from(index)) else {
                     continue;

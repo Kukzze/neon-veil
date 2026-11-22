@@ -253,6 +253,8 @@ pub struct ClientNetworkState {
     /// Where the local character starts; must match the server's spawn.
     pub spawn_point: Vec3,
     pub last_outcome: Option<ReconcileOutcome>,
+    /// Player profiles received from the server, by player.
+    pub profiles: HashMap<PlayerId, Vec<u8>>,
 }
 
 #[derive(Event, Debug, Clone, Copy, PartialEq, Eq)]
@@ -346,6 +348,9 @@ pub fn pump_client_transport(
             }
             ServerMessage::Pong(sent_ms) => {
                 state.rtt_ms = Some(clock_ms(state).saturating_sub(sent_ms) as f32);
+            }
+            ServerMessage::Profile { player_id, data } => {
+                state.profiles.insert(player_id, data);
             }
             ServerMessage::Disconnect(reason) => {
                 state.status = ConnectionStatus::Rejected(reason);

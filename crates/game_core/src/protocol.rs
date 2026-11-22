@@ -14,7 +14,10 @@ pub use crate::time::NetworkTick;
 
 /// Bumped on every incompatible change to the message layout.
 /// v2: added `InputActions::MELEE_HEAVY`. v3: added `InputActions::RELOAD`.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
+
+/// Largest player profile (look and player card) a client may send, bytes.
+pub const MAX_PROFILE_BYTES: usize = 8 * 1024;
 
 /// Places the server may respawn a player at, by index: the avenue start
 /// and the checkpoint before each Night One encounter.
@@ -138,6 +141,9 @@ pub enum ClientMessage {
     Ping(u64),
     /// Respawn at [`RESPAWN_CHECKPOINTS`]`[index]`; other indices are ignored.
     Respawn(u8),
+    /// The sender's profile (opaque to the server, at most
+    /// [`MAX_PROFILE_BYTES`]), relayed to every player.
+    Profile(Vec<u8>),
 }
 
 /// Messages sent server -> client.
@@ -151,6 +157,11 @@ pub enum ServerMessage {
     Pong(u64),
     /// Disconnect with a human-readable reason.
     Disconnect(String),
+    /// A player's profile, as they sent it.
+    Profile {
+        player_id: PlayerId,
+        data: Vec<u8>,
+    },
 }
 
 /// Errors produced while encoding or decoding protocol messages.

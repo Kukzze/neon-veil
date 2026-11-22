@@ -6,6 +6,7 @@ pub mod app;
 pub mod character;
 pub mod client_network;
 pub mod combat_fx;
+pub mod coop;
 pub mod creator;
 pub mod enemy_visuals;
 pub mod gameplay_audio;
