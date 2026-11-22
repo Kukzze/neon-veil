@@ -282,6 +282,10 @@ struct Palette {
     neon: [Handle<StandardMaterial>; 4],
     strip: [Handle<StandardMaterial>; 4],
     lamp_pole: Handle<StandardMaterial>,
+    /// Weathered concrete trim: ledges, pilasters, parapets.
+    trim: Handle<StandardMaterial>,
+    /// Painted sheet metal: AC units, tanks.
+    sheet_metal: Handle<StandardMaterial>,
     lamp_head: Handle<StandardMaterial>,
     skyline: Handle<StandardMaterial>,
     beacon: Handle<StandardMaterial>,
@@ -374,6 +378,8 @@ impl Palette {
         let sidewalk = sidewalk_tex.unwrap_or_else(|| surface(0.07, 0.075, 0.085, 0.45, 0.0));
         let lamp_pole = surface(0.05, 0.05, 0.055, 0.4, 0.8);
         let skyline = surface(0.015, 0.018, 0.026, 0.9, 0.0);
+        let trim = surface(0.055, 0.056, 0.06, 0.75, 0.0);
+        let sheet_metal = surface(0.14, 0.15, 0.15, 0.45, 0.6);
         let mut glow = |color: LinearRgba| {
             materials.add(StandardMaterial {
                 base_color: Color::BLACK,
@@ -394,6 +400,8 @@ impl Palette {
             neon: NeonTone::ALL.map(|t| glow(t.emissive(4.0))),
             strip: NeonTone::ALL.map(|t| glow(t.emissive(2.0))),
             lamp_pole,
+            trim,
+            sheet_metal,
             lamp_head: glow(LinearRgba::rgb(3.5, 3.0, 2.4)),
             skyline,
             beacon: glow(LinearRgba::rgb(12.0, 0.3, 0.2)),
@@ -479,6 +487,129 @@ fn block(
     entity.id()
 }
 
+/// Architectural detail for one building: floor ledges, corner pilasters,
+/// a roof parapet, AC units, a drainpipe and rooftop gear. Everything uses
+/// the shared unit cube so the extra geometry costs no new meshes.
+fn spawn_facade_detail(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    palette: &Palette,
+    b: &BuildingSpec,
+    index: usize,
+) {
+    let mut rng = Rng(DISTRICT_SEED ^ (index as u64 + 1).wrapping_mul(0x9E37_79B9));
+    let out = -b.side; // Towards the street.
+    let face = b.facade_x();
+    let (z0, len, height) = (b.base_center.z, b.size.z, b.size.y);
+    let mut piece = |material: &Handle<StandardMaterial>, center: Vec3, size: Vec3| {
+        block(
+            commands,
+            meshes,
+            palette,
+            material.clone(),
+            center,
+            size,
+            false,
+        );
+    };
+
+    // Floor ledges every two storeys, above the storefront.
+    let mut y = 7.6;
+    while y < height - 2.0 {
+        piece(
+            &palette.trim,
+            Vec3::new(face + out * 0.18, y, z0),
+            Vec3::new(0.36, 0.2, len + 0.3),
+        );
+        y += 7.0;
+    }
+    // Corner pilasters and a parapet cap the silhouette.
+    for end in [-0.5f32, 0.5] {
+        piece(
+            &palette.trim,
+            Vec3::new(face + out * 0.2, height * 0.5, z0 + end * (len - 0.5)),
+            Vec3::new(0.4, height, 0.5),
+        );
+    }
+    piece(
+        &palette.trim,
+        Vec3::new(b.base_center.x, height + 0.45, z0),
+        Vec3::new(b.size.x + 0.3, 0.9, len + 0.3),
+    );
+
+    // AC units hung under window bands.
+    let mut hung = 0;
+    for w in &b.windows {
+        if hung >= 6 || !rng.chance(0.35) {
+            continue;
+        }
+        hung += 1;
+        let z = z0 + w.offset_fraction * len + rng.range(-0.3, 0.3) * len * w.width_fraction;
+        let center = Vec3::new(face + out * 0.42, w.height - 1.0, z);
+        piece(&palette.sheet_metal, center, Vec3::new(0.7, 0.55, 0.9));
+        // Fan grille on the street side.
+        piece(
+            &palette.lamp_pole,
+            center + Vec3::new(out * 0.36, 0.0, 0.0),
+            Vec3::new(0.02, 0.42, 0.42),
+        );
+    }
+
+    // A drainpipe from roof to street with a few brackets.
+    let pipe_z = z0 + if rng.chance(0.5) { 0.42 } else { -0.42 } * len;
+    piece(
+        &palette.lamp_pole,
+        Vec3::new(face + out * 0.25, height * 0.5, pipe_z),
+        Vec3::new(0.14, height, 0.14),
+    );
+
+    // Rooftop gear: a water tank on legs, an antenna, a vent block.
+    let roof = height + 0.9;
+    if rng.chance(0.6) {
+        let at = Vec3::new(
+            b.base_center.x + rng.range(-0.25, 0.25) * b.size.x,
+            roof,
+            z0 + rng.range(-0.3, 0.3) * len,
+        );
+        piece(
+            &palette.sheet_metal,
+            at + Vec3::Y * 2.2,
+            Vec3::new(2.4, 2.4, 2.4),
+        );
+        piece(
+            &palette.sheet_metal,
+            at + Vec3::Y * 3.5,
+            Vec3::new(2.6, 0.2, 2.6),
+        );
+        for (dx, dz) in [(-0.9, -0.9), (0.9, -0.9), (-0.9, 0.9), (0.9, 0.9)] {
+            piece(
+                &palette.lamp_pole,
+                at + Vec3::new(dx, 0.5, dz),
+                Vec3::new(0.12, 1.0, 0.12),
+            );
+        }
+    }
+    if rng.chance(0.5) {
+        let tall = rng.range(4.0, 9.0);
+        let at = Vec3::new(b.base_center.x, roof, z0 + rng.range(-0.35, 0.35) * len);
+        piece(
+            &palette.lamp_pole,
+            at + Vec3::Y * tall * 0.5,
+            Vec3::new(0.1, tall, 0.1),
+        );
+        piece(&palette.beacon, at + Vec3::Y * tall, Vec3::splat(0.25));
+    }
+    piece(
+        &palette.sheet_metal,
+        Vec3::new(
+            b.base_center.x - out * b.size.x * 0.2,
+            roof + 0.6,
+            z0 + rng.range(-0.3, 0.3) * len,
+        ),
+        Vec3::new(1.6, 1.2, 1.2),
+    );
+}
+
 pub fn spawn_neon_district(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -555,6 +686,7 @@ pub fn spawn_neon_district(
             b.size,
             true,
         );
+        spawn_facade_detail(&mut commands, &mut meshes, &palette, b, i);
 
         // Window bands sit just proud of the street-facing wall.
         let face_x = b.facade_x() - b.side * 0.06;
