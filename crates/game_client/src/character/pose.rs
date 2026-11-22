@@ -42,6 +42,11 @@ pub struct PoseState {
     pub last_vertical: f32,
     pub last_drop: f32,
     pub drop_velocity: f32,
+    /// World position last frame and the smoothed velocity estimated from
+    /// it (for bodies whose owner has no simulated velocity, such as
+    /// remote co-op players).
+    pub last_position: Option<Vec3>,
+    pub estimated_velocity: Vec3,
 }
 
 /// Spring stiffness and damping of soft tissue (about 1.6 Hz, settles in ~1 s).
@@ -257,6 +262,7 @@ pub fn animate_bodies(
         Option<&MeleeCombatState>,
     )>,
     mut joints: Query<(&JointRest, &mut Transform)>,
+    globals: Query<&GlobalTransform>,
 ) {
     let dt = time.delta_secs();
     for (entity, body, state) in &mut bodies {
@@ -272,13 +278,28 @@ pub fn animate_bodies(
             let owner = avatars.get(p.get()).map_or(p.get(), |a| a.source);
             sources.get(owner).ok()
         });
+        if let Ok(global) = globals.get(body.root) {
+            let position = global.translation();
+            if let Some(last) = state.last_position {
+                if dt > 0.0 {
+                    let raw = (position - last) / dt;
+                    // Teleports and respawns are not motion.
+                    let raw = if raw.length() > 40.0 { Vec3::ZERO } else { raw };
+                    let blend = 1.0 - (-dt * 10.0).exp();
+                    state.estimated_velocity = state.estimated_velocity.lerp(raw, blend);
+                }
+            }
+            state.last_position = Some(position);
+        }
+        let estimated = state.estimated_velocity;
         let input = source.map_or_else(PoseInputs::default, |(velocity, prediction, melee)| {
             let movement = prediction.map(|p| p.movement);
+            let velocity = velocity.map_or(estimated, |v| v.0);
             PoseInputs {
-                speed: velocity.map_or(0.0, |v| Vec2::new(v.0.x, v.0.z).length()),
+                speed: Vec2::new(velocity.x, velocity.z).length(),
                 airborne: movement.is_some_and(|m| !m.grounded),
                 sliding: movement.is_some_and(|m| m.sliding),
-                vertical: velocity.map_or(0.0, |v| v.0.y),
+                vertical: velocity.y,
                 attack: melee.and_then(|m| {
                     let attack = m.current_attack?;
                     (m.attack_phase != AttackPhase::Idle).then(|| {
