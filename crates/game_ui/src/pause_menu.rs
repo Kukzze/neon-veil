@@ -55,6 +55,9 @@ pub enum PausePage {
 pub struct PauseMenuState {
     pub is_open: bool,
     pub page: PausePage,
+    /// Set when the player asks to edit their operative; the client opens
+    /// the creator and clears it.
+    pub profile_requested: bool,
 }
 
 impl PauseMenuState {
@@ -80,6 +83,11 @@ impl Default for ControlsBadgeState {
     }
 }
 
+/// A full-screen client screen (the operative creator) is up: the cursor is
+/// free, gameplay input is gated and the HUD is hidden.
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScreenOverlay(pub bool);
+
 /// Set by gameplay (death, victory) to freeze the character without
 /// freeing the cursor.
 #[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -88,6 +96,7 @@ pub struct GameplayHold(pub bool);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PauseButton {
     Resume,
+    Profile,
     Settings,
     Controls,
     Quit,
@@ -98,6 +107,7 @@ impl PauseButton {
     pub fn label(self) -> &'static str {
         match self {
             Self::Resume => "RESUME GAME",
+            Self::Profile => "OPERATIVE PROFILE",
             Self::Settings => "SETTINGS",
             Self::Controls => "CONTROLS & KEYBINDINGS",
             Self::Quit => "QUIT TO DESKTOP",
@@ -139,6 +149,10 @@ pub fn apply_pause_button(
 ) -> bool {
     match button {
         PauseButton::Resume => pause.close(),
+        PauseButton::Profile => {
+            pause.close();
+            pause.profile_requested = true;
+        }
         PauseButton::Settings => settings.is_open = true,
         PauseButton::Controls => pause.page = PausePage::Controls,
         PauseButton::Back => pause.page = PausePage::Main,
@@ -223,6 +237,7 @@ pub fn setup_pause_menu(mut commands: Commands, hud_font: Option<Res<HudFont>>) 
                 ));
                 for kind in [
                     PauseButton::Resume,
+                    PauseButton::Profile,
                     PauseButton::Settings,
                     PauseButton::Controls,
                     PauseButton::Quit,
@@ -297,6 +312,7 @@ pub fn toggle_controls_badge(
 /// the badge (hidden while paused).
 pub fn sync_pause_menu_visibility(
     pause: Res<PauseMenuState>,
+    overlay: Option<Res<ScreenOverlay>>,
     settings: Res<SettingsModalState>,
     badge: Res<ControlsBadgeState>,
     mut roots: Query<&mut Visibility, (With<PauseMenuRoot>, Without<PausePageNode>)>,
@@ -321,7 +337,8 @@ pub fn sync_pause_menu_visibility(
         v.set_if_neq(visibility(page.0 == pause.page && !settings.is_open));
     }
     for mut v in &mut badges {
-        v.set_if_neq(visibility(badge.visible && !pause.is_open));
+        let covered = overlay.as_ref().is_some_and(|o| o.0);
+        v.set_if_neq(visibility(badge.visible && !pause.is_open && !covered));
     }
 }
 
@@ -370,16 +387,19 @@ pub fn pause_simulation_time(
 /// Gates gameplay input and frees or captures the cursor to match the
 /// menus. The cursor is only captured while the window has focus, so
 /// clicking back into the window recaptures it.
+#[allow(clippy::too_many_arguments)]
 pub fn sync_gameplay_focus(
     pause: Res<PauseMenuState>,
     skills: Res<SkillsModalState>,
     inventory: Res<InventoryModalState>,
     settings: Res<SettingsModalState>,
     hold: Option<Res<GameplayHold>>,
+    overlay: Option<Res<ScreenOverlay>>,
     mut gate: ResMut<GameplayInputGate>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let menu = any_menu_open(&pause, &skills, &inventory, &settings);
+    let menu =
+        any_menu_open(&pause, &skills, &inventory, &settings) || overlay.is_some_and(|o| o.0);
     let held = hold.is_some_and(|h| h.0);
     gate.set_if_neq(GameplayInputGate {
         blocked: menu || held,

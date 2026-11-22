@@ -276,6 +276,7 @@ mod tests {
             vids: vec![],
             indices: vec![],
             regions: vec![Region::Suit],
+            skin_blend: vec![0.0],
             skeleton: Skeleton {
                 joints: vec![Entity::PLACEHOLDER; 4],
                 names,

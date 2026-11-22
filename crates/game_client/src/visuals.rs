@@ -279,7 +279,7 @@ fn wrap(value: f32, center: f32, half: f32) -> f32 {
 fn update_rain(
     time: Res<Time>,
     atmosphere: Res<AtmosphereState>,
-    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    cameras: Query<&GlobalTransform, (With<Camera3d>, With<CameraRigController>)>,
     mut drops: Query<(&mut Transform, &mut Visibility), With<RainDrop>>,
 ) {
     let Some(camera) = cameras.iter().next() else {

@@ -491,7 +491,12 @@ impl Plugin for MissionPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MissionDirector>()
             .init_resource::<MissionScript>()
-            .add_systems(Update, (apply_start_encounter, run_mission).chain());
+            .add_systems(
+                Update,
+                (apply_start_encounter, run_mission)
+                    .chain()
+                    .run_if(in_state(crate::creator::GameFlow::Playing)),
+            );
     }
 }
 

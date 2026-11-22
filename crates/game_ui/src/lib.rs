@@ -10,13 +10,14 @@ pub mod mission_hud;
 pub mod pause_menu;
 pub mod settings_ui;
 pub mod skills_ui;
+pub mod theme;
 
-pub use hud::{HudFont, HudObjective, HudRootNode, HudTitleFont};
+pub use hud::{HudFont, HudObjective, HudRootNode, HudTitleFont, OperativeName};
 pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
 pub use mission_hud::{ActiveSubtitle, Banner, BannerTone, MissionHud};
 pub use pause_menu::{
     any_menu_open, ControlsBadgeState, GameplayHold, PauseButton, PauseMenuState, PausePage,
-    CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
+    ScreenOverlay, CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
 };
 pub use settings_ui::{SettingsModalState, SettingsTab, UserSettingsConfig, UserSettingsPath};
 pub use skills_ui::{SkillRow, SkillsModalState, SkillsSummary};
@@ -125,6 +126,8 @@ impl Plugin for UiPlugin {
             .init_resource::<MissionHud>()
             .init_resource::<ActiveSubtitle>()
             .init_resource::<GameplayHold>()
+            .init_resource::<ScreenOverlay>()
+            .init_resource::<OperativeName>()
             .add_event::<game_audio::SubtitleDisplayEvent>()
             .init_resource::<ControlsBadgeState>()
             .init_resource::<GameplayInputGate>()
@@ -155,7 +158,10 @@ impl Plugin for UiPlugin {
                         mission_hud::render_mission_hud,
                     )
                         .chain(),
+                    hud::hide_hud_under_overlay,
+                    hud::update_operative_name,
                     (
+                        theme::apply_egui_theme.run_if(has_egui),
                         handle_ui_keyboard_toggles,
                         skills_ui::render_skills_modal_egui.run_if(has_egui),
                         inventory_ui::render_inventory_egui.run_if(has_egui),
@@ -451,7 +457,8 @@ mod tests {
             (
                 PauseMenuState {
                     is_open: true,
-                    page: PausePage::Controls
+                    page: PausePage::Controls,
+                    profile_requested: false,
                 },
                 false
             )

@@ -51,6 +51,8 @@ pub struct ClientOptions {
     pub checkpoint: Option<u8>,
     /// Seconds to wait before the capture (default 6).
     pub capture_after: Option<u32>,
+    /// Open the operative creator even when a saved operative exists.
+    pub creator: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +76,7 @@ where
     while let Some(arg) = args.next() {
         match arg.as_ref() {
             "--greybox" => options.greybox = true,
+            "--creator" => options.creator = true,
             "--connect" => {
                 let addr = args
                     .next()
@@ -274,12 +277,19 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             }
         }
     }
-    let appearance =
-        crate::character::load_appearance(&crate::character::AppearancePath::default().0)
-            .unwrap_or_default();
-    app.insert_resource(appearance)
+    let saved = crate::character::load_appearance(&crate::character::AppearancePath::default().0);
+    // First launch builds an operative; captures skip straight to play.
+    let start = if options.creator {
+        crate::creator::GameFlow::Creator
+    } else if saved.is_some() || options.capture.is_some() {
+        crate::creator::GameFlow::Playing
+    } else {
+        crate::creator::GameFlow::Creator
+    };
+    app.insert_resource(saved.unwrap_or_default())
         .add_plugins((
             crate::character::CharacterPlugin,
+            crate::creator::CreatorPlugin { start },
             crate::visuals::VisualsPlugin,
             crate::enemy_visuals::EnemyVisualsPlugin,
             game_audio::AudioOutputPlugin,
@@ -410,7 +420,8 @@ mod tests {
                 capture_view: None,
                 open_panel: None,
                 checkpoint: None,
-                capture_after: None
+                capture_after: None,
+                creator: false
             })
         );
         assert_eq!(

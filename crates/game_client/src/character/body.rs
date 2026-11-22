@@ -67,6 +67,8 @@ pub struct BodyInstance {
     pub vids: Vec<u32>,
     pub indices: Vec<u32>,
     pub regions: Vec<Region>,
+    /// For skin-or-suit vertices: 0 is suit, 1 is bare skin.
+    pub skin_blend: Vec<f32>,
     pub skeleton: Skeleton,
     /// Joint head positions (rig space) after the last refit.
     pub rest_heads: Vec<Vec3>,
@@ -103,7 +105,6 @@ pub fn vertex_regions(library: &MorphLibrary) -> Vec<Option<Region>> {
     mark("scalp", Region::Scalp, &mut out);
     mark("lips", Region::Lips, &mut out);
     mark("fingernails", Region::Nails, &mut out);
-    mark("toenails", Region::Nails, &mut out);
     for teeth in ["helper-upper-teeth", "helper-lower-teeth"] {
         mark(teeth, Region::Teeth, &mut out);
     }
@@ -299,15 +300,15 @@ pub fn prepare_bodies(
         let by_vid = regions.get_or_init(|| vertex_regions(&library));
         let joints_attr = mesh.attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
         let weights_attr = mesh.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
-        let vertex_regions: Vec<Region> = vids
+        let (vertex_regions, skin_blend): (Vec<Region>, Vec<f32>) = vids
             .iter()
             .enumerate()
             .map(|(i, &vid)| {
                 if let Some(region) = by_vid[vid as usize] {
-                    return region;
+                    return (region, 1.0);
                 }
                 if vid >= BODY_VERTEX_COUNT {
-                    return Region::Skin;
+                    return (Region::Skin, 1.0);
                 }
                 let skin_weight = match (joints_attr, weights_attr) {
                     (
@@ -323,13 +324,11 @@ pub fn prepare_bodies(
                         .sum::<f32>(),
                     _ => 0.0,
                 };
-                if skin_weight > 0.5 {
-                    Region::Skin
-                } else {
-                    Region::Suit
-                }
+                // A soft edge where the suit meets skin (neck, wrists).
+                let t = ((skin_weight - 0.3) / 0.4).clamp(0.0, 1.0);
+                (Region::Skin, t * t * (3.0 - 2.0 * t))
             })
-            .collect();
+            .unzip();
 
         let cloned = mesh.clone();
         let copy = meshes.add(cloned);
@@ -341,6 +340,7 @@ pub fn prepare_bodies(
                 vids,
                 indices,
                 regions: vertex_regions,
+                skin_blend,
                 skeleton,
                 rest_heads: Vec::new(),
                 applied: None,
@@ -376,11 +376,18 @@ pub fn apply_appearances(
         let shaped = library.shape(look);
         let positions: Vec<Vec3> = body.vids.iter().map(|&v| shaped[v as usize]).collect();
         let normals = seamless_normals(&positions, &body.vids, &body.indices, shaped.len());
+        let suit = region_color(Region::Suit, look);
         let colors: Vec<[f32; 4]> = body
             .regions
             .iter()
-            .map(|r| {
+            .zip(&body.skin_blend)
+            .map(|(r, blend)| {
                 let c = region_color(*r, look);
+                let c = if *r == Region::Skin {
+                    suit.lerp(c, *blend)
+                } else {
+                    c
+                };
                 [c.x, c.y, c.z, 1.0]
             })
             .collect();

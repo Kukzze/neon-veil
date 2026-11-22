@@ -69,6 +69,19 @@ pub struct AmmoCounterUi;
 #[derive(Component, Debug, Default)]
 pub struct CompassStripUi;
 
+/// The player's callsign, shown on the vitals card.
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct OperativeName(pub String);
+
+impl Default for OperativeName {
+    fn default() -> Self {
+        Self("OPERATIVE".into())
+    }
+}
+
+#[derive(Component, Debug, Default)]
+pub struct OperativeNameUi;
+
 #[derive(Component, Debug, Default)]
 pub struct CompassTapeUi;
 
@@ -543,6 +556,7 @@ pub fn setup_cyberpunk_hud(
             .with_children(|bottom| {
                 bottom.spawn(card(CYAN)).with_children(|vitals| {
                     vitals.spawn((
+                        OperativeNameUi,
                         hud_text(&title, "OPERATIVE", 15.0, TEXT),
                         Node {
                             margin: UiRect::bottom(Val::Px(6.0)),
@@ -840,6 +854,42 @@ pub fn update_compass_strip(
         write_compass_tape(&mut text.0, heading);
     }
     *shown = Some(key);
+}
+
+/// Writes the callsign onto the vitals card in capitals.
+pub fn update_operative_name(
+    name: Option<Res<OperativeName>>,
+    mut texts: Query<&mut Text, With<OperativeNameUi>>,
+) {
+    let Some(name) = name.filter(|n| n.is_changed()) else {
+        return;
+    };
+    let shown = name.0.to_uppercase();
+    for mut text in &mut texts {
+        if text.0 != shown {
+            text.0.clone_from(&shown);
+        }
+    }
+}
+
+/// Hides the in-game HUD while a full-screen client screen is up.
+pub fn hide_hud_under_overlay(
+    overlay: Option<Res<crate::ScreenOverlay>>,
+    mut roots: Query<&mut Visibility, With<HudRootNode>>,
+) {
+    let Some(overlay) = overlay else {
+        return;
+    };
+    if !overlay.is_changed() {
+        return;
+    }
+    for mut visibility in &mut roots {
+        *visibility = if overlay.0 {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+    }
 }
 
 /// Opens the crosshair with weapon spread and movement speed.
