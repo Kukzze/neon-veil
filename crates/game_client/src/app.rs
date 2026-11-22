@@ -53,6 +53,10 @@ pub struct ClientOptions {
     pub capture_after: Option<u32>,
     /// Open the operative creator even when a saved operative exists.
     pub creator: bool,
+    /// Start the creator on the face close-up.
+    pub creator_face: bool,
+    /// Use this preset instead of the saved operative.
+    pub preset: Option<crate::character::Preset>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +81,20 @@ where
         match arg.as_ref() {
             "--greybox" => options.greybox = true,
             "--creator" => options.creator = true,
+            "--preset" => {
+                let name = args.next().ok_or("--preset needs a preset name")?;
+                let wanted = name.as_ref().to_ascii_lowercase();
+                options.preset = Some(
+                    crate::character::Preset::ALL
+                        .into_iter()
+                        .find(|p| p.label().to_ascii_lowercase() == wanted)
+                        .ok_or_else(|| format!("unknown preset {wanted:?}"))?,
+                );
+            }
+            "--creator-face" => {
+                options.creator = true;
+                options.creator_face = true;
+            }
             "--connect" => {
                 let addr = args
                     .next()
@@ -286,10 +304,17 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
     } else {
         crate::creator::GameFlow::Creator
     };
-    app.insert_resource(saved.unwrap_or_default())
+    let look = match options.preset {
+        Some(preset) => crate::character::CharacterAppearance::preset(preset),
+        None => saved.unwrap_or_default(),
+    };
+    app.insert_resource(look)
         .add_plugins((
             crate::character::CharacterPlugin,
-            crate::creator::CreatorPlugin { start },
+            crate::creator::CreatorPlugin {
+                start,
+                face_view: options.creator_face,
+            },
             crate::visuals::VisualsPlugin,
             crate::enemy_visuals::EnemyVisualsPlugin,
             game_audio::AudioOutputPlugin,
@@ -421,7 +446,9 @@ mod tests {
                 open_panel: None,
                 checkpoint: None,
                 capture_after: None,
-                creator: false
+                creator: false,
+                creator_face: false,
+                preset: None
             })
         );
         assert_eq!(

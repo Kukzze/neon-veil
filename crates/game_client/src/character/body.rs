@@ -69,6 +69,10 @@ pub struct BodyInstance {
     pub regions: Vec<Region>,
     /// For skin-or-suit vertices: 0 is suit, 1 is bare skin.
     pub skin_blend: Vec<f32>,
+    pub uvs: Vec<[f32; 2]>,
+    /// The composed albedo and the material showing it, with the look
+    /// they were made for.
+    pub albedo: Option<(AlbedoKey, Handle<Image>, Handle<StandardMaterial>)>,
     pub skeleton: Skeleton,
     /// Joint head positions (rig space) after the last refit.
     pub rest_heads: Vec<Vec3>,
@@ -166,6 +170,25 @@ pub fn region_color(region: Region, look: &CharacterAppearance) -> Vec3 {
         Region::Teeth => Vec3::new(0.78, 0.76, 0.68),
         Region::Tongue => Vec3::new(0.5, 0.16, 0.18),
         Region::Lashes => linear(look.hair_color) * 0.4,
+    }
+}
+
+/// Vertex colour: skin vertices stay white (the albedo texture carries skin
+/// and clothes); eyes, teeth, tongue and lashes are coloured here.
+pub fn vertex_color(region: Region, look: &CharacterAppearance) -> Vec3 {
+    match region {
+        Region::Skin | Region::Suit => Vec3::ONE,
+        // These multiply the skin-toned albedo, so they are relative tints.
+        Region::Lips => Vec3::new(1.0, 0.8, 0.8),
+        Region::Nails => Vec3::new(1.06, 1.02, 1.0),
+        Region::Scalp => match look.hair {
+            HairStyle::Buzz => {
+                let skin = linear(look.skin_tone).max(Vec3::splat(0.05));
+                (linear(look.hair_color) / skin).min(Vec3::ONE)
+            }
+            HairStyle::Shaved => Vec3::splat(0.92),
+        },
+        other => region_color(other, look),
     }
 }
 
@@ -330,6 +353,10 @@ pub fn prepare_bodies(
             })
             .unzip();
 
+        let uvs: Vec<[f32; 2]> = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+            Some(VertexAttributeValues::Float32x2(uv)) => uv.clone(),
+            _ => continue,
+        };
         let cloned = mesh.clone();
         let copy = meshes.add(cloned);
         commands.entity(entity).insert((
@@ -341,6 +368,8 @@ pub fn prepare_bodies(
                 indices,
                 regions: vertex_regions,
                 skin_blend,
+                uvs,
+                albedo: None,
                 skeleton,
                 rest_heads: Vec::new(),
                 applied: None,
@@ -376,18 +405,11 @@ pub fn apply_appearances(
         let shaped = library.shape(look);
         let positions: Vec<Vec3> = body.vids.iter().map(|&v| shaped[v as usize]).collect();
         let normals = seamless_normals(&positions, &body.vids, &body.indices, shaped.len());
-        let suit = region_color(Region::Suit, look);
         let colors: Vec<[f32; 4]> = body
             .regions
             .iter()
-            .zip(&body.skin_blend)
-            .map(|(r, blend)| {
-                let c = region_color(*r, look);
-                let c = if *r == Region::Skin {
-                    suit.lerp(c, *blend)
-                } else {
-                    c
-                };
+            .map(|r| {
+                let c = vertex_color(*r, look);
                 [c.x, c.y, c.z, 1.0]
             })
             .collect();
@@ -397,6 +419,10 @@ pub fn apply_appearances(
         );
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        // The skin normal map needs tangents for the reshaped surface.
+        if let Err(error) = mesh.generate_tangents() {
+            warn!("operative tangents: {error}");
+        }
 
         // Refit: joints move to where the reshaped body puts them; rest
         // rotations stay, so animation behaves the same on every body.
@@ -436,6 +462,134 @@ pub fn apply_appearances(
         skinned.inverse_bindposes = bindposes.add(SkinnedMeshInverseBindposes::from(inverse));
         body.rest_heads = world_t;
         body.applied = Some(look.clone());
+    }
+}
+
+/// What the albedo depends on; slider changes alone do not recompose it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlbedoKey {
+    skin: [f32; 3],
+    suit: [f32; 3],
+    accent: [f32; 3],
+    outfit: super::appearance::Outfit,
+    feminine: bool,
+}
+
+impl AlbedoKey {
+    pub fn of(look: &CharacterAppearance) -> Self {
+        Self {
+            skin: look.skin_tone,
+            suit: look.suit,
+            accent: look.accent,
+            outfit: look.outfit,
+            feminine: look.slider("gender") > 0.15,
+        }
+    }
+}
+
+/// Shared atlas data, built from the first prepared body.
+#[derive(Resource)]
+pub struct SkinAtlas {
+    pub garments: super::skin_texture::GarmentAtlas,
+    pub table: super::skin_texture::SrgbTable,
+}
+
+/// Composes each body's albedo when its colours, outfit or gender side
+/// change, and gives it a material showing it.
+#[allow(clippy::too_many_arguments)]
+pub fn compose_albedos(
+    mut commands: Commands,
+    library: Option<Res<MorphLibrary>>,
+    atlas: Option<Res<SkinAtlas>>,
+    base: Res<super::BodyMaterial>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut bodies: Query<(&mut BodyInstance, &mut MeshMaterial3d<StandardMaterial>)>,
+    looks: Query<&CharacterAppearance>,
+) {
+    use super::skin_texture::{build_atlas, compose_albedo, GarmentFit, SrgbTable, ATLAS_SIZE};
+    use bevy::render::render_asset::RenderAssetUsages;
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let Some(library) = library else {
+        return;
+    };
+    let Some(atlas) = atlas else {
+        // Build once from any prepared body (all share topology and UVs).
+        if let Some((body, _)) = bodies.iter().next() {
+            if let Some(fit) = GarmentFit::from_library(&library) {
+                let garments = build_atlas(
+                    ATLAS_SIZE,
+                    &body.uvs,
+                    &body.indices,
+                    &body.vids,
+                    &library.neutral,
+                    &body.skin_blend,
+                    &fit,
+                );
+                commands.insert_resource(SkinAtlas {
+                    garments,
+                    table: SrgbTable::default(),
+                });
+            }
+        }
+        return;
+    };
+    for (mut body, mut material) in &mut bodies {
+        let Ok(look) = looks.get(body.root) else {
+            continue;
+        };
+        let key = AlbedoKey::of(look);
+        if body.albedo.as_ref().is_some_and(|(k, _, _)| *k == key) {
+            continue;
+        }
+        let detail_handle = if key.feminine {
+            &base.detail_female
+        } else {
+            &base.detail_male
+        };
+        let Some(detail) = images.get(detail_handle) else {
+            continue;
+        };
+        // Grayscale maps load as one byte per texel; take red otherwise.
+        let stride = (detail.data.len() / (ATLAS_SIZE * ATLAS_SIZE)).max(1);
+        if detail.data.len() < ATLAS_SIZE * ATLAS_SIZE {
+            continue;
+        }
+        let gray: Vec<u8> = detail
+            .data
+            .iter()
+            .step_by(stride)
+            .copied()
+            .take(ATLAS_SIZE * ATLAS_SIZE)
+            .collect();
+        let rgba = compose_albedo(&atlas.garments, &gray, look, &atlas.table);
+        let image = Image::new(
+            Extent3d {
+                width: ATLAS_SIZE as u32,
+                height: ATLAS_SIZE as u32,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            rgba,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        let image = images.add(image);
+        let handle = match &body.albedo {
+            Some((_, _, existing)) => {
+                if let Some(m) = materials.get_mut(existing) {
+                    m.base_color_texture = Some(image.clone());
+                }
+                existing.clone()
+            }
+            None => {
+                let mut m = materials.get(&base.template).cloned().unwrap_or_default();
+                m.base_color_texture = Some(image.clone());
+                materials.add(m)
+            }
+        };
+        material.0 = handle.clone();
+        body.albedo = Some((key, image, handle));
     }
 }
 

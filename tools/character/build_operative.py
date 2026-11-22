@@ -33,7 +33,7 @@ HumanObjectProperties = __import__(
 
 MPFB_DIR = os.path.dirname(sys.modules[MPFB].__file__)
 TARGETS = os.path.join(MPFB_DIR, "data", "targets")
-RIG_JSON = os.path.join(MPFB_DIR, "data", "rigs", "standard", "rig.game_engine.json")
+RIG_JSON = os.path.join(MPFB_DIR, "data", "rigs", "standard", "rig.game_engine_with_breast.json")
 GROUPS_JSON = os.path.join(MPFB_DIR, "data", "mesh_metadata", "basemesh_vertex_groups.json")
 
 # Helper groups removed from the rendered mesh.
@@ -185,6 +185,25 @@ def macro_deltas(basemesh, prop, value, neutral):
     return out
 
 
+def race_deltas(basemesh, mix, neutral):
+    """Deltas for a heritage mix like {"asian": 1.0, "african": 0.0, "caucasian": 0.0}."""
+    names = ("asian", "african", "caucasian")
+    original = {n: HumanObjectProperties.get_value(n, entity_reference=basemesh) for n in names}
+    for n in names:
+        HumanObjectProperties.set_value(n, mix[n], entity_reference=basemesh)
+    TargetService.reapply_macro_details(basemesh)
+    shaped = mix_positions(basemesh)
+    for n in names:
+        HumanObjectProperties.set_value(n, original[n], entity_reference=basemesh)
+    TargetService.reapply_macro_details(basemesh)
+    out = {}
+    for i, (a, b) in enumerate(zip(shaped, neutral)):
+        d = (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+        if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 1e-12:
+            out[i] = d
+    return out
+
+
 def quantize(v):
     return max(-32767, min(32767, round(v * DELTA_SCALE)))
 
@@ -206,6 +225,12 @@ def main(out_dir):
         morphs.append((f"{sid}+", macro_deltas(basemesh, prop, high, neutral)))
         sliders.append({"id": sid, "label": label, "category": category,
                         "low": f"{sid}-", "high": f"{sid}+"})
+    # Heritage: face and body structure blended toward each MakeHuman set.
+    for heritage, label in (("asian", "East Asian"), ("african", "African"), ("caucasian", "European")):
+        mix = {n: (1.0 if n == heritage else 0.0) for n in ("asian", "african", "caucasian")}
+        sid = f"heritage_{heritage}"
+        morphs.append((f"{sid}+", race_deltas(basemesh, mix, neutral)))
+        sliders.append({"id": sid, "label": label, "category": "Heritage", "low": None, "high": f"{sid}+"})
     for sid, label, category, low, high in DETAILS:
         entry = {"id": sid, "label": label, "category": category, "low": None, "high": None}
         if low:
@@ -227,6 +252,8 @@ def main(out_dir):
             for start, end in groups[info["cube_name"]]:
                 out.extend(range(start, end + 1))
             return out
+        if info["strategy"] == "VERTEX":
+            return [info["vertex_index"]]
         return list(info["vertex_indices"])
 
     bones = {name: {"parent": b["parent"] or None,
@@ -267,7 +294,7 @@ def main(out_dir):
         json.dump({"sliders": sliders, "bones": bones, "regions": regions}, f, separators=(",", ":"))
 
     # Skinned neutral body for the game.
-    HumanService.add_builtin_rig(basemesh, "game_engine")
+    HumanService.add_builtin_rig(basemesh, "game_engine_with_breast")
     mesh = basemesh.data
     vid = mesh.attributes.new("_VID", "FLOAT", "POINT")
     for i, v in enumerate(vid.data):

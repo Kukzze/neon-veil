@@ -54,6 +54,27 @@ pub const HAIR_COLORS: [[f32; 3]; 6] = [
     [0.85, 0.15, 0.45],
 ];
 
+/// What the operative wears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Outfit {
+    /// Briefs, plus a bra on feminine bodies.
+    #[default]
+    Underwear,
+    /// Full-body operative suit.
+    OperativeSuit,
+}
+
+impl Outfit {
+    pub const ALL: [Self; 2] = [Self::Underwear, Self::OperativeSuit];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Underwear => "Underwear",
+            Self::OperativeSuit => "Operative suit",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum HairStyle {
     Shaved,
@@ -99,6 +120,7 @@ pub struct CharacterAppearance {
     pub eye_color: [f32; 3],
     pub hair: HairStyle,
     pub hair_color: [f32; 3],
+    pub outfit: Outfit,
     pub suit: [f32; 3],
     pub accent: [f32; 3],
     pub card: PlayerCard,
@@ -114,17 +136,28 @@ impl Default for CharacterAppearance {
 pub enum Preset {
     Vanguard,
     Wraith,
+    Hana,
+    Jun,
     Bruiser,
     Runner,
 }
 
 impl Preset {
-    pub const ALL: [Self; 4] = [Self::Vanguard, Self::Wraith, Self::Bruiser, Self::Runner];
+    pub const ALL: [Self; 6] = [
+        Self::Vanguard,
+        Self::Wraith,
+        Self::Hana,
+        Self::Jun,
+        Self::Bruiser,
+        Self::Runner,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Vanguard => "Vanguard",
             Self::Wraith => "Wraith",
+            Self::Hana => "Hana",
+            Self::Jun => "Jun",
             Self::Bruiser => "Bruiser",
             Self::Runner => "Runner",
         }
@@ -154,6 +187,33 @@ impl CharacterAppearance {
                 ("cheekbones", 0.4),
                 ("eye_size", 0.2),
             ],
+            Preset::Hana => &[
+                ("gender", 1.0),
+                ("heritage_asian", 0.9),
+                ("age", -0.35),
+                ("muscle", 0.1),
+                ("weight", -0.3),
+                ("height", -0.15),
+                ("proportions", 0.8),
+                ("cupsize", 0.2),
+                ("jaw_width", -0.35),
+                ("chin_prominence", -0.15),
+                ("nose_width", -0.25),
+                ("eye_size", 0.25),
+                ("cheek_volume", 0.15),
+            ],
+            Preset::Jun => &[
+                ("gender", -0.85),
+                ("heritage_asian", 0.85),
+                ("age", -0.3),
+                ("muscle", 0.45),
+                ("weight", -0.2),
+                ("height", 0.1),
+                ("proportions", 0.75),
+                ("torso_vshape", 0.3),
+                ("jaw_width", -0.1),
+                ("nose_width", -0.15),
+            ],
             Preset::Bruiser => &[
                 ("gender", -1.0),
                 ("muscle", 1.0),
@@ -175,6 +235,8 @@ impl CharacterAppearance {
         let (skin, suit, accent) = match preset {
             Preset::Vanguard => (2, 0, 0),
             Preset::Wraith => (1, 2, 1),
+            Preset::Hana => (1, 0, 1),
+            Preset::Jun => (1, 0, 0),
             Preset::Bruiser => (5, 1, 2),
             Preset::Runner => (3, 4, 3),
         };
@@ -184,6 +246,7 @@ impl CharacterAppearance {
             eye_color: EYE_COLORS[0],
             hair: HairStyle::Buzz,
             hair_color: HAIR_COLORS[0],
+            outfit: Outfit::Underwear,
             suit: SUIT_COLORS[suit],
             accent: ACCENT_COLORS[accent],
             card: PlayerCard::default(),

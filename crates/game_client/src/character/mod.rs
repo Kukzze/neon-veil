@@ -5,29 +5,60 @@ pub mod appearance;
 pub mod body;
 pub mod library;
 pub mod pose;
+pub mod skin_texture;
 
 pub use appearance::{
-    load_appearance, save_appearance, AppearancePath, CharacterAppearance, HairStyle, PlayerCard,
-    Preset,
+    load_appearance, save_appearance, AppearancePath, CharacterAppearance, HairStyle, Outfit,
+    PlayerCard, Preset,
 };
 pub use body::{BodyInstance, JointRest, OperativeBody, ATTRIBUTE_VID};
 pub use library::{MorphLibrary, SliderInfo, BODY_SCENE};
 
 use bevy::prelude::*;
 
-/// Body material: vertex colours carry skin, suit and eye tones.
+/// Skin detail maps (one leaning masculine, one feminine) and the template
+/// each body's material is cloned from; bodies add their composed albedo.
 #[derive(Resource, Debug, Clone)]
-pub struct BodyMaterial(pub Handle<StandardMaterial>);
+pub struct BodyMaterial {
+    pub detail_male: Handle<Image>,
+    pub detail_female: Handle<Image>,
+    pub template: Handle<StandardMaterial>,
+}
+
+pub const SKIN_DETAIL_MALE: &str = "characters/skin_detail_male.png";
+pub const SKIN_DETAIL_FEMALE: &str = "characters/skin_detail_female.png";
+pub const SKIN_NORMAL: &str = "characters/skin_normal.png";
 
 impl FromWorld for BodyMaterial {
     fn from_world(world: &mut World) -> Self {
-        let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
-        Self(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            perceptual_roughness: 0.58,
-            reflectance: 0.35,
-            ..default()
-        }))
+        let assets = world.resource::<AssetServer>().clone();
+        let linear = |path: &'static str| {
+            assets.load_with_settings(path, |s: &mut bevy::image::ImageLoaderSettings| {
+                s.is_srgb = false;
+            })
+        };
+        let detail_male = linear(SKIN_DETAIL_MALE);
+        let detail_female = linear(SKIN_DETAIL_FEMALE);
+        let normal = linear(SKIN_NORMAL);
+        let template = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial {
+                base_color: Color::WHITE,
+                normal_map_texture: Some(normal),
+                perceptual_roughness: 0.5,
+                reflectance: 0.4,
+                // A soft dewy sheen over the skin.
+                clearcoat: 0.18,
+                clearcoat_perceptual_roughness: 0.32,
+                // Clearcoat needs the forward path (the deferred G-buffer drops it).
+                opaque_render_method: bevy::pbr::OpaqueRendererMethod::Forward,
+                ..default()
+            });
+        Self {
+            detail_male,
+            detail_female,
+            template,
+        }
     }
 }
 
@@ -45,16 +76,6 @@ fn load_library(mut commands: Commands) {
     }
 }
 
-/// Swaps the glTF default material for the body material.
-fn use_body_material(
-    material: Res<BodyMaterial>,
-    mut bodies: Query<&mut MeshMaterial3d<StandardMaterial>, Added<BodyInstance>>,
-) {
-    for mut handle in &mut bodies {
-        handle.0 = material.0.clone();
-    }
-}
-
 /// Loads appearance data and shapes operative bodies.
 pub struct CharacterPlugin;
 
@@ -67,8 +88,8 @@ impl Plugin for CharacterPlugin {
                 Update,
                 (
                     body::prepare_bodies,
-                    use_body_material,
                     body::apply_appearances,
+                    body::compose_albedos,
                     pose::animate_bodies,
                 )
                     .chain(),

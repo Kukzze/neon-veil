@@ -7,7 +7,7 @@ use crate::character::appearance::{
 };
 use crate::character::{
     save_appearance, spawn_operative_body, AppearancePath, CharacterAppearance, HairStyle,
-    MorphLibrary, OperativeBody, Preset,
+    MorphLibrary, OperativeBody, Outfit, Preset,
 };
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::prepass::{DeferredPrepass, DepthPrepass};
@@ -98,6 +98,7 @@ fn swatch_row(ui: &mut egui::Ui, label: &str, palette: &[[f32; 3]], value: &mut 
     ui.add_space(6.0);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn enter_creator(
     mut commands: Commands,
     assets: Res<AssetServer>,
@@ -106,6 +107,7 @@ pub fn enter_creator(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cameras: Query<&mut Camera, Without<StudioCamera>>,
     mut overlay: ResMut<ScreenOverlay>,
+    start_face: Option<Res<StartFaceView>>,
 ) {
     let draft = look.as_deref().cloned().unwrap_or_default();
     for mut camera in &mut cameras {
@@ -225,7 +227,7 @@ pub fn enter_creator(
     commands.insert_resource(CreatorState {
         draft,
         tab: "Body".into(),
-        face_view: false,
+        face_view: start_face.is_some_and(|f| f.0),
         yaw: 0.0,
         seed: 0x5eed,
     });
@@ -249,6 +251,7 @@ pub fn exit_creator(
 
 /// Frames the camera on the body (or face), offset so it sits right of
 /// the panel, and turns the preview with drags outside the panel.
+#[allow(clippy::too_many_arguments)]
 pub fn frame_studio(
     time: Res<Time>,
     state: Option<ResMut<CreatorState>>,
@@ -257,10 +260,23 @@ pub fn frame_studio(
     motion: Res<AccumulatedMouseMotion>,
     mut pivots: Query<&mut Transform, (With<StudioPivot>, Without<StudioCamera>)>,
     mut cameras: Query<&mut Transform, With<StudioCamera>>,
+    bodies: Query<&crate::character::BodyInstance>,
+    studio: Query<(), With<StudioBody>>,
 ) {
     let Some(mut state) = state else {
         return;
     };
+    // Frame the face on the preview's head joint, whatever its height.
+    let head = bodies
+        .iter()
+        .find(|b| studio.contains(b.root))
+        .and_then(|b| {
+            b.skeleton
+                .index
+                .get("head")
+                .and_then(|&i| b.rest_heads.get(i))
+        })
+        .map_or(1.55, |h| h.y);
     let over_panel = contexts
         .try_ctx_mut()
         .is_some_and(|c| c.wants_pointer_input());
@@ -270,11 +286,10 @@ pub fn frame_studio(
     for mut pivot in &mut pivots {
         pivot.rotation = Quat::from_rotation_y(std::f32::consts::PI + state.yaw);
     }
-    let height = 1.0 + 0.12 * state.draft.slider("height");
     let (eye, target) = if state.face_view {
         (
-            Vec3::new(-0.05, 1.62 * height, 1.15),
-            Vec3::new(-0.16, 1.58 * height, 0.0),
+            Vec3::new(-0.05, head + 0.04, 1.15),
+            Vec3::new(-0.16, head + 0.02, 0.0),
         )
     } else {
         (Vec3::new(0.0, 1.05, 5.2), Vec3::new(-0.62, 0.95, 0.0))
@@ -400,6 +415,13 @@ pub fn creator_panel(
                 .max_height(ui.available_height() - 110.0)
                 .show(ui, |ui| {
                     if tab == TAB_STYLE {
+                        ui.label(egui::RichText::new("OUTFIT").color(MUTED).size(12.0));
+                        ui.horizontal(|ui| {
+                            for outfit in Outfit::ALL {
+                                ui.selectable_value(&mut draft.outfit, outfit, outfit.label());
+                            }
+                        });
+                        ui.add_space(6.0);
                         swatch_row(ui, "SKIN TONE", &SKIN_TONES, &mut draft.skin_tone);
                         swatch_row(ui, "EYES", &EYE_COLORS, &mut draft.eye_color);
                         ui.label(egui::RichText::new("HAIR").color(MUTED).size(12.0));
@@ -505,11 +527,17 @@ pub fn sync_callsign(
 
 pub struct CreatorPlugin {
     pub start: GameFlow,
+    /// Open on the face close-up.
+    pub face_view: bool,
 }
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct StartFaceView(pub bool);
 
 impl Plugin for CreatorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_state(self.start)
+            .insert_resource(StartFaceView(self.face_view))
             .add_systems(OnEnter(GameFlow::Creator), enter_creator)
             .add_systems(OnExit(GameFlow::Creator), exit_creator)
             .add_systems(
