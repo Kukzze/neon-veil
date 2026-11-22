@@ -2,6 +2,7 @@
 //! and filmic tonemapping, district-driven fog and rain, moonlight, the
 //! operative avatar, and the local player's starting kit.
 
+use crate::character::{spawn_operative_body, CharacterAppearance};
 use crate::client_network::{apply_visual_error_decay, LocalPredictedPlayer, PredictedVisual};
 use avian3d::prelude::{Collider, RigidBody};
 use bevy::core_pipeline::bloom::Bloom;
@@ -105,88 +106,34 @@ pub fn district_atmosphere(position: Vec3) -> AtmosphereState {
     }
 }
 
-/// Meshes and materials shared by every avatar, built once.
+/// Meshes and materials for the operative's katana and slash trail.
 #[derive(Resource)]
 pub struct AvatarAssets {
     armor: Handle<StandardMaterial>,
-    fabric: Handle<StandardMaterial>,
-    visor: Handle<StandardMaterial>,
-    core: Handle<StandardMaterial>,
-    thruster: Handle<StandardMaterial>,
     blade: Handle<StandardMaterial>,
-    torso: Handle<Mesh>,
-    chest_core: Handle<Mesh>,
-    under_suit: Handle<Mesh>,
-    helmet: Handle<Mesh>,
-    visor_strip: Handle<Mesh>,
-    pauldron: Handle<Mesh>,
-    arm: Handle<Mesh>,
-    leg: Handle<Mesh>,
-    sole: Handle<Mesh>,
     sheath: Handle<Mesh>,
     blade_edge: Handle<Mesh>,
-    spine_light: Handle<Mesh>,
-    edge_light: Handle<Mesh>,
-    backpack: Handle<Mesh>,
-    vent: Handle<Mesh>,
     slash_arc: Handle<Mesh>,
     slash: Handle<StandardMaterial>,
 }
 
 impl AvatarAssets {
     fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
-        let mut material = |base: Color, roughness: f32, metallic: f32, emissive: LinearRgba| {
-            materials.add(StandardMaterial {
-                base_color: base,
-                perceptual_roughness: roughness,
-                metallic,
-                emissive,
-                ..default()
-            })
-        };
         Self {
-            // Lighter, glossier plates pick up neon reflections in the rain.
-            armor: material(Color::srgb(0.42, 0.45, 0.5), 0.38, 0.25, LinearRgba::BLACK),
-            fabric: material(Color::srgb(0.1, 0.11, 0.13), 0.7, 0.05, LinearRgba::BLACK),
-            visor: material(
-                Color::srgb(0.0, 0.2, 0.25),
-                0.3,
-                0.0,
-                LinearRgba::rgb(0.0, 3.5, 5.0),
-            ),
-            core: material(
-                Color::srgb(0.0, 0.15, 0.2),
-                0.3,
-                0.0,
-                LinearRgba::rgb(0.0, 2.5, 3.5),
-            ),
-            thruster: material(
-                Color::srgb(0.2, 0.08, 0.01),
-                0.3,
-                0.0,
-                LinearRgba::rgb(4.0, 1.8, 0.0),
-            ),
-            blade: material(
-                Color::srgb(0.0, 0.2, 0.3),
-                0.3,
-                0.0,
-                LinearRgba::rgb(0.0, 4.0, 6.0),
-            ),
-            torso: meshes.add(Cuboid::new(0.48, 0.58, 0.28)),
-            chest_core: meshes.add(Cuboid::new(0.12, 0.16, 0.04)),
-            under_suit: meshes.add(Cuboid::new(0.42, 0.52, 0.24)),
-            helmet: meshes.add(Cuboid::new(0.28, 0.30, 0.30)),
-            visor_strip: meshes.add(Cuboid::new(0.30, 0.07, 0.08)),
-            pauldron: meshes.add(Cuboid::new(0.14, 0.12, 0.22)),
-            arm: meshes.add(Cuboid::new(0.11, 0.42, 0.14)),
-            leg: meshes.add(Cuboid::new(0.16, 0.62, 0.18)),
-            sole: meshes.add(Cuboid::new(0.14, 0.05, 0.20)),
-            sheath: meshes.add(Cuboid::new(0.06, 1.05, 0.04)),
+            armor: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.16, 0.17, 0.2),
+                perceptual_roughness: 0.38,
+                metallic: 0.6,
+                ..default()
+            }),
+            blade: materials.add(StandardMaterial {
+                base_color: Color::srgb(0.0, 0.2, 0.3),
+                perceptual_roughness: 0.3,
+                emissive: LinearRgba::rgb(0.0, 4.0, 6.0),
+                ..default()
+            }),
+            sheath: meshes.add(Cuboid::new(0.05, 1.0, 0.035)),
             blade_edge: meshes.add(Cuboid::new(0.015, 0.95, 0.01)),
-            spine_light: meshes.add(Cuboid::new(0.05, 0.42, 0.02)),
-            edge_light: meshes.add(Cuboid::new(0.15, 0.022, 0.23)),
-            backpack: meshes.add(Cuboid::new(0.3, 0.32, 0.1)),
-            vent: meshes.add(Cuboid::new(0.07, 0.04, 0.02)),
             slash_arc: meshes.add(crate::combat_fx::slash_arc_mesh(
                 0.55,
                 1.45,
@@ -407,6 +354,8 @@ fn starter_inventory() -> PlayerInventory {
 fn attach_local_player_presentation(
     mut commands: Commands,
     assets: Res<AvatarAssets>,
+    asset_server: Res<AssetServer>,
+    appearance: Option<Res<CharacterAppearance>>,
     added: Query<Entity, Added<LocalPredictedPlayer>>,
     mut rigs: Query<&mut CameraRigController>,
 ) {
@@ -431,15 +380,22 @@ fn attach_local_player_presentation(
                 Collider::capsule(0.35, 1.1),
             )]),
         ));
-        spawn_operative_avatar(&mut commands, &assets, player);
+        let look = appearance.as_deref().cloned().unwrap_or_default();
+        spawn_operative_avatar(&mut commands, &assets, &asset_server, look, player);
     }
 }
 
-pub fn spawn_operative_avatar(commands: &mut Commands, a: &AvatarAssets, source: Entity) -> Entity {
+pub fn spawn_operative_avatar(
+    commands: &mut Commands,
+    a: &AvatarAssets,
+    asset_server: &AssetServer,
+    appearance: CharacterAppearance,
+    source: Entity,
+) -> Entity {
     let part = |mesh: &Handle<Mesh>, material: &Handle<StandardMaterial>, at: Transform| {
         (Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), at)
     };
-    commands
+    let root = commands
         .spawn((
             Name::new("Operative Avatar"),
             PredictedVisual { source },
@@ -448,66 +404,25 @@ pub fn spawn_operative_avatar(commands: &mut Commands, a: &AvatarAssets, source:
             Visibility::default(),
         ))
         .with_children(|root| {
-            // Body pivots at the hips so leaning looks natural.
+            // Gear pivots at the hips so it leans and crouches with the body.
             root.spawn((
                 AvatarBody,
                 Transform::from_xyz(0.0, AVATAR_HIP_HEIGHT, 0.0),
                 Visibility::default(),
             ))
             .with_children(|body| {
-                body.spawn(part(
-                    &a.torso,
-                    &a.armor,
-                    Transform::from_xyz(0.0, 0.08, 0.0),
-                ));
-                body.spawn(part(
-                    &a.chest_core,
-                    &a.core,
-                    Transform::from_xyz(0.0, 0.16, -0.15),
-                ));
-                body.spawn(part(
-                    &a.under_suit,
-                    &a.fabric,
-                    Transform::from_xyz(0.0, 0.08, 0.0),
-                ));
-                body.spawn(part(
-                    &a.helmet,
-                    &a.armor,
-                    Transform::from_xyz(0.0, 0.52, 0.0),
-                ));
-                body.spawn(part(
-                    &a.visor_strip,
-                    &a.visor,
-                    Transform::from_xyz(0.0, 0.55, -0.15),
-                ));
-                for x in [-0.29, 0.29] {
-                    body.spawn(part(
-                        &a.pauldron,
-                        &a.armor,
-                        Transform::from_xyz(x, 0.28, 0.0),
-                    ));
-                    body.spawn(part(&a.arm, &a.fabric, Transform::from_xyz(x, -0.04, 0.0)));
-                }
-                for x in [-0.15, 0.15] {
-                    body.spawn(part(&a.leg, &a.armor, Transform::from_xyz(x, -0.48, 0.0)));
-                    body.spawn(part(
-                        &a.sole,
-                        &a.thruster,
-                        Transform::from_xyz(x, -0.80, 0.0),
-                    ));
-                }
                 let blade_tilt = Quat::from_rotation_z(-0.55);
                 body.spawn(part(
                     &a.sheath,
                     &a.armor,
-                    Transform::from_xyz(0.08, 0.22, 0.17).with_rotation(blade_tilt),
+                    Transform::from_xyz(0.08, 0.26, 0.15).with_rotation(blade_tilt),
                 ));
                 body.spawn((
                     SheathedBlade,
                     part(
                         &a.blade_edge,
                         &a.blade,
-                        Transform::from_xyz(0.08, 0.22, 0.19).with_rotation(blade_tilt),
+                        Transform::from_xyz(0.08, 0.26, 0.17).with_rotation(blade_tilt),
                     ),
                 ));
                 body.spawn((
@@ -522,34 +437,11 @@ pub fn spawn_operative_avatar(commands: &mut Commands, a: &AvatarAssets, source:
                     Visibility::Hidden,
                     NotShadowCaster,
                 ));
-                // The third-person camera sees the back: give it light.
-                body.spawn(part(
-                    &a.backpack,
-                    &a.armor,
-                    Transform::from_xyz(0.0, 0.12, 0.18),
-                ));
-                body.spawn(part(
-                    &a.spine_light,
-                    &a.core,
-                    Transform::from_xyz(0.0, 0.12, 0.235),
-                ));
-                for x in [-0.09, 0.09] {
-                    body.spawn(part(
-                        &a.vent,
-                        &a.thruster,
-                        Transform::from_xyz(x, -0.06, 0.235),
-                    ));
-                }
-                for x in [-0.29, 0.29] {
-                    body.spawn(part(
-                        &a.edge_light,
-                        &a.visor,
-                        Transform::from_xyz(x, 0.345, 0.0),
-                    ));
-                }
             });
         })
-        .id()
+        .id();
+    spawn_operative_body(commands, asset_server, root, appearance);
+    root
 }
 
 /// Yaw facing a planar velocity (forward is -Z), if moving.

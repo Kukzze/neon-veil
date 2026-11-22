@@ -1,0 +1,5 @@
+Operative character data (operative.glb, operative_morphs.bin, operative_rig.json)
+
+The base mesh, morph targets and rig weights are derived from MakeHuman
+(http://www.makehumancommunity.org), released under CC0 1.0 Universal
+(public domain dedication). Rebuild them with tools/character/build_operative.py.

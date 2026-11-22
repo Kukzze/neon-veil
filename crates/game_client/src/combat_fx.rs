@@ -75,7 +75,7 @@ fn swing_plane(combo_index: u8) -> Quat {
 }
 
 /// Blade direction within the swing plane at progress `t` in [0, 1].
-fn swing_angle(combo_index: u8, t: f32) -> f32 {
+pub fn swing_angle(combo_index: u8, t: f32) -> f32 {
     let eased = 1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3);
     let (from, to) = match combo_index % 3 {
         0 => (-SWING_HALF_ANGLE, SWING_HALF_ANGLE),

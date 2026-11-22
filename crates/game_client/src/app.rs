@@ -245,6 +245,10 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
                 file_path: asset_root().to_string_lossy().into_owned(),
                 ..default()
             })
+            .set(
+                bevy::gltf::GltfPlugin::default()
+                    .add_custom_vertex_attribute("VID", crate::character::ATTRIBUTE_VID),
+            )
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: WINDOW_TITLE.into(),
@@ -270,12 +274,17 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             }
         }
     }
-    app.add_plugins((
-        crate::visuals::VisualsPlugin,
-        crate::enemy_visuals::EnemyVisualsPlugin,
-        game_audio::AudioOutputPlugin,
-    ))
-    .insert_resource(game_audio::VoiceAssetRoot(asset_root()));
+    let appearance =
+        crate::character::load_appearance(&crate::character::AppearancePath::default().0)
+            .unwrap_or_default();
+    app.insert_resource(appearance)
+        .add_plugins((
+            crate::character::CharacterPlugin,
+            crate::visuals::VisualsPlugin,
+            crate::enemy_visuals::EnemyVisualsPlugin,
+            game_audio::AudioOutputPlugin,
+        ))
+        .insert_resource(game_audio::VoiceAssetRoot(asset_root()));
     if let Some(path) = options.capture {
         let view = options.capture_view.map_or(CAPTURE_VIEW, |(yaw, pitch)| {
             ((yaw as f32).to_radians(), (pitch as f32).to_radians())
