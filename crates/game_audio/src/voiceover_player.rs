@@ -18,6 +18,8 @@ pub const TUTORIAL_DIALOGUE_MANIFEST: &str =
     include_str!("../../../assets/audio/voiceovers/dialogue_manifest.json");
 pub const MISSION_ONE_DIALOGUE_MANIFEST: &str =
     include_str!("../../../assets/audio/voiceovers/mission_one_manifest.json");
+pub const ONBOARDING_DIALOGUE_MANIFEST: &str =
+    include_str!("../../../assets/audio/voiceovers/onboarding_manifest.json");
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceCueData {
@@ -131,6 +133,11 @@ impl DialogueManifest {
 
     pub fn tutorial() -> Self {
         Self::parse(TUTORIAL_DIALOGUE_MANIFEST).expect("embedded dialogue manifest is valid")
+    }
+
+    /// The first-run tutorial.
+    pub fn onboarding() -> Self {
+        Self::parse(ONBOARDING_DIALOGUE_MANIFEST).expect("embedded onboarding manifest is valid")
     }
 
     /// Voiced dialogue for the first mission, Night One.

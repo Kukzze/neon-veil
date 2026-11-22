@@ -11,6 +11,7 @@ pub mod enemy_visuals;
 pub mod gameplay_audio;
 pub mod mission;
 pub mod transport;
+pub mod tutorial;
 pub mod visuals;
 
 pub use app::{

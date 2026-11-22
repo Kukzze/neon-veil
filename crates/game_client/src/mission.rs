@@ -495,7 +495,8 @@ impl Plugin for MissionPlugin {
                 Update,
                 (apply_start_encounter, run_mission)
                     .chain()
-                    .run_if(in_state(crate::creator::GameFlow::Playing)),
+                    .run_if(in_state(crate::creator::GameFlow::Playing))
+                    .run_if(not(resource_exists::<crate::tutorial::TutorialActive>)),
             );
     }
 }

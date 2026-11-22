@@ -57,6 +57,8 @@ pub struct ClientOptions {
     pub creator_face: bool,
     /// Use this preset instead of the saved operative.
     pub preset: Option<crate::character::Preset>,
+    /// Run the tutorial even if it was completed.
+    pub tutorial: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +83,7 @@ where
         match arg.as_ref() {
             "--greybox" => options.greybox = true,
             "--creator" => options.creator = true,
+            "--tutorial" => options.tutorial = true,
             "--preset" => {
                 let name = args.next().ok_or("--preset needs a preset name")?;
                 let wanted = name.as_ref().to_ascii_lowercase();
@@ -290,19 +293,29 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
         // The story mission runs its encounters locally, so it is offline only.
         if options.session == SessionMode::Offline {
             app.add_plugins(crate::mission::MissionPlugin);
+            let progress =
+                crate::tutorial::load_progress(&crate::tutorial::ProgressPath::default().0);
+            let first_run = !progress.tutorial_done
+                && options.capture.is_none()
+                && options.checkpoint.is_none();
+            app.add_plugins(crate::tutorial::TutorialPlugin {
+                enabled: options.tutorial || first_run,
+            });
             if let Some(n) = options.checkpoint {
                 app.insert_resource(crate::mission::StartAtEncounter(n));
             }
         }
     }
     let saved = crate::character::load_appearance(&crate::character::AppearancePath::default().0);
-    // First launch builds an operative; captures skip straight to play.
-    let start = if options.creator {
+    // First launch plays the tutorial, then opens the creator (see
+    // tutorial.rs); captures and returning players go straight to play.
+    let progress = crate::tutorial::load_progress(&crate::tutorial::ProgressPath::default().0);
+    let start = if options.creator
+        || (saved.is_none() && progress.tutorial_done && options.capture.is_none())
+    {
         crate::creator::GameFlow::Creator
-    } else if saved.is_some() || options.capture.is_some() {
-        crate::creator::GameFlow::Playing
     } else {
-        crate::creator::GameFlow::Creator
+        crate::creator::GameFlow::Playing
     };
     let look = match options.preset {
         Some(preset) => crate::character::CharacterAppearance::preset(preset),
@@ -448,7 +461,8 @@ mod tests {
                 capture_after: None,
                 creator: false,
                 creator_face: false,
-                preset: None
+                preset: None,
+                tutorial: false
             })
         );
         assert_eq!(

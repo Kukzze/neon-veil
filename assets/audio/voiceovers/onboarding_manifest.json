@@ -1,0 +1,56 @@
+{
+  "project": "NEON_VEIL_ZERO_PROTOCOL",
+  "version": "1.2.0",
+  "default_model_id": "eleven_v4",
+  "dialogues": [
+    {
+      "cue_id": "TUT_M1_MOVE",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Neural link online. Motor cortex is rusty. Walk it off, operative. Use W, A, S and D.",
+      "output_path": "assets/audio/voiceovers/tut_m1_move.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_SPRINT",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Good. Now open it up. Hold Shift and sprint.",
+      "output_path": "assets/audio/voiceovers/tut_m1_sprint.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_JUMP",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Leg actuators responding. Press Space to jump.",
+      "output_path": "assets/audio/voiceovers/tut_m1_jump.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_SLIDE",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Build speed, then press C. A slide keeps your momentum and your head down.",
+      "output_path": "assets/audio/voiceovers/tut_m1_slide.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_COMBO",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Katana synced. Left click to strike. Chain three for the full combo.",
+      "output_path": "assets/audio/voiceovers/tut_m1_combo.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_GUARD",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Hold right mouse to guard. Time it as they strike and you will parry.",
+      "output_path": "assets/audio/voiceovers/tut_m1_guard.ogg"
+    },
+    {
+      "cue_id": "TUT_M1_DONE",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "Good. You remember how to move. Now get down Kuroshio, kid.",
+      "output_path": "assets/audio/voiceovers/tut_m1_done.ogg"
+    }
+  ]
+}
