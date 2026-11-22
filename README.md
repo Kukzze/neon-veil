@@ -53,6 +53,7 @@ long legs.
 - **Ten real hair styles**, from buzz cuts and bobs to braids, ponytails and an afro; plus **twelve brow styles** and lashes. Everything takes your hair colour.
 - **Clothes that fit any body**: work wear, sportswear, casual and elegant sets and shoes, refitted to every slider. Skin underneath is hidden, so nothing pokes through.
 - **Smooth, detailed skin**: real skin detail, soft normal mapping and a dewy sheen, tinted to any of eight tones.
+- **Makeup**: lipstick, eyeshadow and blush, each with its own colour palette and intensity.
 - **Six presets** to start from, a randomizer, and a **player card** with your callsign and title.
 - **Co-op ready**: your look and card travel with you, so other players see your operative.
 
@@ -71,7 +72,7 @@ long legs.
 ### Fight with a blade
 
 - A **three-hit cyber-katana combo** with swing trails and hit detection, a **guard and parry** stance, and posture damage.
-- **Enemies that think**: grunts, cloaked ninjas, hunter drones, shielded heavies, netrunners, and a multi-phase boss with hazards.
+- **Enemies that think**: grunts, cloaked ninjas, hunter drones, shielded heavies, netrunners, and a multi-phase boss with hazards. Every Syndicate soldier is a real, fitted human with their own face, build, hair and gear.
 
 ### A city that breathes
 
@@ -79,7 +80,7 @@ long legs.
   <img src="docs/media/street.jpg" width="80%" alt="Wet neon street">
 </p>
 
-- A **procedural neon district**: towers with lit windows, blade signs, storefront light spill, skybridges and a skyline with warning beacons.
+- A **procedural neon district**: towers with lit windows, floor ledges, pilasters, AC units, drainpipes, rooftop tanks and antennas, blade signs, storefront light spill, skybridges and a skyline with warning beacons.
 - **Photo-scanned materials** (asphalt, worn concrete, metal plate) and **screen-space reflections** that make every puddle mirror the neon.
 - HDR, bloom, filmic tonemapping, rain and district-tuned fog.
 - **Synthesized sound**: footsteps, thrusters, katana swings, impacts, rain and a dark synth bed. No sample packs, every sound is generated from DSP.
@@ -128,6 +129,7 @@ Gamepads are supported too.
 | `--preset <name>` | Use a preset: Vanguard, Wraith, Hana, Jun, Bruiser, Runner |
 | `--checkpoint <1-4>` | Start Night One at an encounter (4 is the Gorgon) |
 | `--tutorial` | Replay the tutorial |
+| `--showcase` | Line up one of each Syndicate enemy in front of you |
 | `--greybox` | Load the parkour test gym and developer tools |
 | `--capture <file.png>` | Save a screenshot and exit (with `--capture-view <yaw>,<pitch>` and `--capture-after <secs>`) |
 
