@@ -1,10 +1,12 @@
 //! The customizable operative: a MakeHuman body shaped by 80+ sliders,
 //! coloured per region and refitted to a game skeleton.
 
+pub mod accessories;
 pub mod appearance;
 pub mod body;
 pub mod library;
 pub mod pose;
+pub mod proxy;
 pub mod skin_texture;
 
 pub use appearance::{
@@ -84,12 +86,17 @@ impl Plugin for CharacterPlugin {
         app.init_resource::<BodyMaterial>()
             .init_resource::<AppearancePath>()
             .add_systems(PreStartup, load_library)
+            .add_systems(Startup, accessories::setup_proxy_library)
             .add_systems(
                 Update,
                 (
                     body::prepare_bodies,
                     body::apply_appearances,
                     body::compose_albedos,
+                    accessories::add_hidden_skin,
+                    accessories::sync_worn_proxies,
+                    accessories::refit_worn_proxies,
+                    accessories::hide_covered_skin,
                     pose::animate_bodies,
                 )
                     .chain(),

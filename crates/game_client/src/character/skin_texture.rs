@@ -262,7 +262,12 @@ pub fn compose_albedo(
             }
         };
         // Brows sit over skin and are never covered.
-        let c = c.lerp(brow * (0.6 + 0.4 * d), f32::from(atlas.brows[i]) / 255.0);
+        let brow_amount = if look.brow_mesh.is_empty() {
+            f32::from(atlas.brows[i]) / 255.0
+        } else {
+            0.0
+        };
+        let c = c.lerp(brow * (0.6 + 0.4 * d), brow_amount);
         // Eyes, teeth and tongue take their colour from the vertices.
         let c = if atlas.body[i] == 0 {
             Vec3::splat(d / 0.9)

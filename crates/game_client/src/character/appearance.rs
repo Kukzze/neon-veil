@@ -121,6 +121,13 @@ pub struct CharacterAppearance {
     pub hair: HairStyle,
     pub hair_color: [f32; 3],
     pub outfit: Outfit,
+    /// Hair mesh worn (a proxy name), or empty for the painted style.
+    pub hair_mesh: String,
+    /// Eyebrow mesh, or empty for painted brows.
+    pub brow_mesh: String,
+    pub lashes: bool,
+    /// Clothing worn over the base layer (proxy names).
+    pub clothing: Vec<String>,
     pub suit: [f32; 3],
     pub accent: [f32; 3],
     pub card: PlayerCard,
@@ -224,13 +231,20 @@ impl CharacterAppearance {
                 ("jaw_width", 0.7),
             ],
             Preset::Runner => &[
-                ("gender", 0.2),
+                ("gender", 0.85),
                 ("muscle", 0.35),
                 ("weight", -0.5),
                 ("height", -0.1),
                 ("upperleg_length", 0.3),
                 ("lowerleg_length", 0.3),
             ],
+        };
+        let hair = match preset {
+            Preset::Vanguard | Preset::Bruiser => "short02",
+            Preset::Wraith => "bob02",
+            Preset::Hana => "long01",
+            Preset::Jun => "short04",
+            Preset::Runner => "ponytail01",
         };
         let (skin, suit, accent) = match preset {
             Preset::Vanguard => (2, 0, 0),
@@ -247,6 +261,14 @@ impl CharacterAppearance {
             hair: HairStyle::Buzz,
             hair_color: HAIR_COLORS[0],
             outfit: Outfit::Underwear,
+            hair_mesh: hair.to_owned(),
+            brow_mesh: "eyebrow001".to_owned(),
+            lashes: true,
+            clothing: match preset {
+                Preset::Runner => vec!["female_sportsuit01".to_owned(), "shoes02".to_owned()],
+                Preset::Bruiser => vec!["male_worksuit01".to_owned(), "shoes01".to_owned()],
+                _ => Vec::new(),
+            },
             suit: SUIT_COLORS[suit],
             accent: ACCENT_COLORS[accent],
             card: PlayerCard::default(),
@@ -312,6 +334,16 @@ impl CharacterAppearance {
             self.card.callsign = PlayerCard::default().callsign;
         }
         self.card.title = clean(&self.card.title, 24);
+        let safe_name =
+            |s: &str| s.len() <= 32 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !safe_name(&self.hair_mesh) {
+            self.hair_mesh.clear();
+        }
+        if !safe_name(&self.brow_mesh) {
+            self.brow_mesh.clear();
+        }
+        self.clothing.retain(|c| safe_name(c));
+        self.clothing.truncate(4);
         self.sliders.retain(|_, v| v.is_finite());
         for v in self.sliders.values_mut() {
             *v = v.clamp(-1.0, 1.0);

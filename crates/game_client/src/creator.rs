@@ -2,6 +2,7 @@
 //! a panel with every body and face slider, presets, colours and the
 //! player card. Opens on first launch and from the pause menu.
 
+use crate::character::accessories::{ProxyKind, ProxyLibrary};
 use crate::character::appearance::{
     ACCENT_COLORS, EYE_COLORS, HAIR_COLORS, SKIN_TONES, SUIT_COLORS,
 };
@@ -55,6 +56,34 @@ pub struct CreatorState {
 }
 
 /// Slider ids in `category`, in library order.
+/// "short02" -> "Short 02", "female_casualsuit01" -> "Female casualsuit 01".
+pub fn pretty(name: &str) -> String {
+    let mut out = String::new();
+    for (i, word) in name.split('_').enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        let digits = word
+            .find(|c: char| c.is_ascii_digit())
+            .unwrap_or(word.len());
+        let (text, num) = word.split_at(digits);
+        let mut chars = text.chars();
+        if let Some(first) = chars.next() {
+            if i == 0 {
+                out.extend(first.to_uppercase());
+            } else {
+                out.push(first);
+            }
+            out.push_str(chars.as_str());
+        }
+        if !num.is_empty() {
+            out.push(' ');
+            out.push_str(num);
+        }
+    }
+    out
+}
+
 pub fn sliders_in<'a>(
     library: &'a MorphLibrary,
     category: &str,
@@ -330,6 +359,7 @@ pub fn creator_panel(
     mut players: Query<&mut CharacterAppearance, (With<OperativeBody>, Without<StudioBody>)>,
     mut commands: Commands,
     mut next: ResMut<NextState<GameFlow>>,
+    proxies: Option<Res<ProxyLibrary>>,
 ) {
     let (Some(library), Some(mut state)) = (library, state) else {
         return;
@@ -425,11 +455,75 @@ pub fn creator_panel(
                         swatch_row(ui, "SKIN TONE", &SKIN_TONES, &mut draft.skin_tone);
                         swatch_row(ui, "EYES", &EYE_COLORS, &mut draft.eye_color);
                         ui.label(egui::RichText::new("HAIR").color(MUTED).size(12.0));
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             for style in HairStyle::ALL {
-                                ui.selectable_value(&mut draft.hair, style, style.label());
+                                if ui
+                                    .selectable_label(
+                                        draft.hair_mesh.is_empty() && draft.hair == style,
+                                        style.label(),
+                                    )
+                                    .clicked()
+                                {
+                                    draft.hair = style;
+                                    draft.hair_mesh.clear();
+                                }
+                            }
+                            if let Some(proxies) = proxies.as_deref() {
+                                for name in proxies.names(ProxyKind::Hair) {
+                                    ui.selectable_value(
+                                        &mut draft.hair_mesh,
+                                        name.to_owned(),
+                                        pretty(name),
+                                    );
+                                }
                             }
                         });
+                        ui.label(egui::RichText::new("BROWS").color(MUTED).size(12.0));
+                        ui.horizontal_wrapped(|ui| {
+                            ui.selectable_value(&mut draft.brow_mesh, String::new(), "Painted");
+                            if let Some(proxies) = proxies.as_deref() {
+                                for name in proxies.names(ProxyKind::Brows) {
+                                    ui.selectable_value(
+                                        &mut draft.brow_mesh,
+                                        name.to_owned(),
+                                        pretty(name),
+                                    );
+                                }
+                            }
+                        });
+                        ui.checkbox(&mut draft.lashes, "Eyelashes");
+                        ui.add_space(4.0);
+                        if let Some(proxies) = proxies.as_deref() {
+                            let clothes = proxies.names(ProxyKind::Clothes);
+                            let (shoes, wear): (Vec<&str>, Vec<&str>) =
+                                clothes.into_iter().partition(|n| n.starts_with("shoes"));
+                            for (label, options) in [("CLOTHING", wear), ("SHOES", shoes)] {
+                                ui.label(egui::RichText::new(label).color(MUTED).size(12.0));
+                                let mut chosen = draft
+                                    .clothing
+                                    .iter()
+                                    .find(|c| options.contains(&c.as_str()))
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let before = chosen.clone();
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.selectable_value(&mut chosen, String::new(), "None");
+                                    for name in &options {
+                                        ui.selectable_value(
+                                            &mut chosen,
+                                            (*name).to_owned(),
+                                            pretty(name),
+                                        );
+                                    }
+                                });
+                                if chosen != before {
+                                    draft.clothing.retain(|c| !options.contains(&c.as_str()));
+                                    if !chosen.is_empty() {
+                                        draft.clothing.push(chosen);
+                                    }
+                                }
+                            }
+                        }
                         swatch_row(ui, "HAIR COLOUR", &HAIR_COLORS, &mut draft.hair_color);
                         swatch_row(ui, "SUIT", &SUIT_COLORS, &mut draft.suit);
                         swatch_row(ui, "ACCENT", &ACCENT_COLORS, &mut draft.accent);

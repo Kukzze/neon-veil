@@ -70,6 +70,10 @@ pub struct BodyInstance {
     /// For skin-or-suit vertices: 0 is suit, 1 is bare skin.
     pub skin_blend: Vec<f32>,
     pub uvs: Vec<[f32; 2]>,
+    /// Skin weights by MakeHuman vertex (helpers absent from the mesh are `None`).
+    pub vid_weights: Vec<Option<([u16; 4], [f32; 4])>>,
+    /// Every MakeHuman vertex for the applied look (accessories fit to it).
+    pub shaped: Vec<Vec3>,
     /// The composed albedo and the material showing it, with the look
     /// they were made for.
     pub albedo: Option<(AlbedoKey, Handle<Image>, Handle<StandardMaterial>)>,
@@ -357,6 +361,16 @@ pub fn prepare_bodies(
             Some(VertexAttributeValues::Float32x2(uv)) => uv.clone(),
             _ => continue,
         };
+        let mut vid_weights = vec![None; library.neutral.len()];
+        if let (
+            Some(VertexAttributeValues::Uint16x4(j)),
+            Some(VertexAttributeValues::Float32x4(w)),
+        ) = (joints_attr, weights_attr)
+        {
+            for (i, &vid) in vids.iter().enumerate() {
+                vid_weights[vid as usize] = Some((j[i], w[i]));
+            }
+        }
         let cloned = mesh.clone();
         let copy = meshes.add(cloned);
         commands.entity(entity).insert((
@@ -369,6 +383,8 @@ pub fn prepare_bodies(
                 regions: vertex_regions,
                 skin_blend,
                 uvs,
+                vid_weights,
+                shaped: Vec::new(),
                 albedo: None,
                 skeleton,
                 rest_heads: Vec::new(),
@@ -461,6 +477,7 @@ pub fn apply_appearances(
         }
         skinned.inverse_bindposes = bindposes.add(SkinnedMeshInverseBindposes::from(inverse));
         body.rest_heads = world_t;
+        body.shaped = shaped;
         body.applied = Some(look.clone());
     }
 }
@@ -473,6 +490,7 @@ pub struct AlbedoKey {
     accent: [f32; 3],
     outfit: super::appearance::Outfit,
     feminine: bool,
+    painted_brows: bool,
 }
 
 impl AlbedoKey {
@@ -483,6 +501,7 @@ impl AlbedoKey {
             accent: look.accent,
             outfit: look.outfit,
             feminine: look.slider("gender") > 0.15,
+            painted_brows: look.brow_mesh.is_empty(),
         }
     }
 }

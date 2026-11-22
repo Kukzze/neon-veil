@@ -36,6 +36,51 @@ pub struct PoseState {
     pub air: f32,
     pub slide: f32,
     pub guard: f32,
+    /// Soft-tissue offset per side (x: bounce, y: sway), radians.
+    pub jiggle: [Vec2; 2],
+    pub jiggle_velocity: [Vec2; 2],
+    pub last_vertical: f32,
+    pub last_drop: f32,
+    pub drop_velocity: f32,
+}
+
+/// Spring stiffness and damping of soft tissue (about 1.6 Hz, settles in ~1 s).
+const JIGGLE_STIFFNESS: f32 = 100.0;
+const JIGGLE_DAMPING: f32 = 7.0;
+/// Radians of bounce per m/s^2 of vertical acceleration.
+const JIGGLE_GAIN: f32 = 0.012;
+const JIGGLE_LIMIT: f32 = 0.22;
+
+impl PoseState {
+    /// Advances the soft-tissue springs from the body's vertical
+    /// acceleration and gait sway; `softness` 0 keeps them still.
+    pub fn step_jiggle(&mut self, vertical_accel: f32, softness: f32, dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+        let sway = (self.phase).cos() * 0.6 * self.gait * (1.0 + self.sprint);
+        for side in 0..2 {
+            let sign = if side == 0 { 1.0 } else { -1.0 };
+            let drive = Vec2::new(
+                vertical_accel * JIGGLE_GAIN,
+                sway * sign * JIGGLE_GAIN * 4.0,
+            ) * softness;
+            let accel = -JIGGLE_STIFFNESS * self.jiggle[side]
+                - JIGGLE_DAMPING * self.jiggle_velocity[side]
+                + drive * JIGGLE_STIFFNESS;
+            self.jiggle_velocity[side] += accel * dt;
+            self.jiggle[side] = (self.jiggle[side] + self.jiggle_velocity[side] * dt)
+                .clamp(Vec2::splat(-JIGGLE_LIMIT), Vec2::splat(JIGGLE_LIMIT));
+        }
+    }
+}
+
+/// How much a look's chest moves: feminine bodies, larger and softer more.
+pub fn jiggle_softness(look: &crate::character::CharacterAppearance) -> f32 {
+    let feminine = ((look.slider("gender") + 0.2) / 1.0).clamp(0.0, 1.0);
+    let size = 0.5 + 0.5 * look.slider("cupsize");
+    let firm = 0.5 + 0.5 * look.slider("firmness");
+    feminine * (0.35 + 0.65 * size) * (1.0 - 0.55 * firm)
 }
 
 impl PoseState {
@@ -164,6 +209,15 @@ pub fn evaluate_pose(
             if let Some((_, offset)) = spine.iter().find(|(n, _)| *n == name) {
                 world = *offset * inherited;
             }
+            let side = match name {
+                "breast_l" => Some(0),
+                "breast_r" => Some(1),
+                _ => None,
+            };
+            if let Some(side) = side {
+                let j = state.jiggle[side];
+                world = Quat::from_rotation_x(j.x) * Quat::from_rotation_z(j.y) * inherited;
+            }
             if let (Some((_, desired)), Some(child)) =
                 (targets.iter().find(|(n, _)| *n == name), child_of(i))
             {
@@ -237,6 +291,19 @@ pub fn animate_bodies(
         });
         state.advance(&input, dt);
         let (local, drop) = evaluate_pose(body, &state, &input);
+        if dt > 0.0 {
+            // Body vertical acceleration: velocity changes plus the gait bob
+            // (a hip drop lowers the chest).
+            let velocity_change = (input.vertical - state.last_vertical) / dt;
+            let drop_velocity = (drop - state.last_drop) / dt;
+            let drop_accel = (drop_velocity - state.drop_velocity) / dt;
+            let accel = (velocity_change - drop_accel).clamp(-40.0, 40.0);
+            let softness = body.applied.as_ref().map_or(0.0, jiggle_softness);
+            state.step_jiggle(accel, softness, dt);
+            state.last_vertical = input.vertical;
+            state.last_drop = drop;
+            state.drop_velocity = drop_velocity;
+        }
         let pelvis = body.skeleton.index.get("pelvis").copied();
         for (i, joint) in body.skeleton.joints.iter().enumerate() {
             if let Ok((rest, mut transform)) = joints.get_mut(*joint) {
@@ -278,6 +345,8 @@ mod tests {
             regions: vec![Region::Suit],
             skin_blend: vec![0.0],
             uvs: vec![],
+            vid_weights: vec![],
+            shaped: vec![],
             albedo: None,
             skeleton: Skeleton {
                 joints: vec![Entity::PLACEHOLDER; 4],
@@ -341,6 +410,33 @@ mod tests {
             world_dir(&body, &local, 1, 2).z > 0.8,
             "leading leg extends forward"
         );
+    }
+
+    #[test]
+    fn soft_tissue_bounces_then_settles() {
+        let mut state = PoseState::default();
+        state.step_jiggle(30.0, 1.0, 1.0 / 60.0);
+        for _ in 0..5 {
+            state.step_jiggle(30.0, 1.0, 1.0 / 60.0);
+        }
+        assert!(state.jiggle[0].x > 0.02, "an upward jolt pulls tissue down");
+        for _ in 0..240 {
+            state.step_jiggle(0.0, 1.0, 1.0 / 60.0);
+        }
+        assert!(state.jiggle[0].length() < 0.005, "settles within seconds");
+        let mut firm = PoseState::default();
+        firm.step_jiggle(30.0, 0.0, 1.0 / 60.0);
+        assert_eq!(firm.jiggle[0], Vec2::ZERO, "no softness, no motion");
+        assert!(state.jiggle[0].x.abs() <= JIGGLE_LIMIT);
+    }
+
+    #[test]
+    fn softness_follows_the_look() {
+        use crate::character::{CharacterAppearance, Preset};
+        let masculine = CharacterAppearance::preset(Preset::Bruiser);
+        let feminine = CharacterAppearance::preset(Preset::Wraith);
+        assert_eq!(jiggle_softness(&masculine), 0.0);
+        assert!(jiggle_softness(&feminine) > 0.2);
     }
 
     #[test]
