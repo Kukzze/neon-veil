@@ -5,6 +5,7 @@ pub mod chunk_loader;
 pub mod district_manifest;
 pub mod greybox_gym;
 pub mod lod_system;
+pub mod mipmaps;
 pub mod neon_district;
 pub mod procedural_streets;
 pub mod spatial_index;

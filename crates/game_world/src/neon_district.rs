@@ -12,6 +12,9 @@ use crate::procedural_streets::{spawn_bounce_awning, spawn_skybridge, BounceAwni
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+/// Photo textures for the street and buildings (see assets/textures/world).
+pub const WORLD_TEXTURES: &str = "textures/world";
+
 pub const DISTRICT_SEED: u64 = 0x4E56_5A50;
 /// Half width of the road; sidewalks run from here to the facades.
 pub const ROAD_HALF_WIDTH: f32 = 9.0;
@@ -282,10 +285,75 @@ struct Palette {
     lamp_head: Handle<StandardMaterial>,
     skyline: Handle<StandardMaterial>,
     beacon: Handle<StandardMaterial>,
+    /// Materials with photo textures, and their tile size in metres.
+    tiled: Vec<(AssetId<StandardMaterial>, f32)>,
+    /// Photo textures that still need mip chains.
+    images: Vec<AssetId<Image>>,
 }
 
 impl Palette {
-    fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
+    fn tile_for(&self, material: &Handle<StandardMaterial>) -> Option<f32> {
+        self.tiled
+            .iter()
+            .find(|(id, _)| *id == material.id())
+            .map(|(_, t)| *t)
+    }
+
+    fn new(
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<StandardMaterial>,
+        assets: Option<&AssetServer>,
+    ) -> Self {
+        let mut tiled = Vec::new();
+        let mut images = Vec::new();
+        // Photo-scanned PBR sets (Poly Haven, CC0): colour, normal, roughness.
+        let mut textured = |name: &str, tint: Color, roughness: f32, metallic: f32, tile: f32| {
+            let assets = assets?;
+            let load = |path: String, srgb: bool| -> Handle<Image> {
+                assets.load_with_settings(path, move |s: &mut bevy::image::ImageLoaderSettings| {
+                    s.is_srgb = srgb;
+                    s.sampler = crate::mipmaps::tiling_sampler();
+                })
+            };
+            let color = load(format!("{WORLD_TEXTURES}/{name}_Diffuse.png"), true);
+            let normal = load(format!("{WORLD_TEXTURES}/{name}_nor_gl.png"), false);
+            let rough = load(format!("{WORLD_TEXTURES}/{name}_Rough.png"), false);
+            images.extend([color.id(), normal.id(), rough.id()]);
+            let handle = materials.add(StandardMaterial {
+                base_color: tint,
+                base_color_texture: Some(color),
+                normal_map_texture: Some(normal),
+                metallic_roughness_texture: Some(rough),
+                perceptual_roughness: roughness,
+                metallic,
+                ..default()
+            });
+            tiled.push((handle.id(), tile));
+            Some(handle)
+        };
+        let asphalt_tex = textured("asphalt_02", Color::srgb(0.5, 0.5, 0.56), 0.7, 0.0, 4.0);
+        let sidewalk_tex = textured(
+            "concrete_floor_worn_001",
+            Color::srgb(0.42, 0.43, 0.48),
+            0.85,
+            0.0,
+            2.5,
+        );
+        let wall_tex = textured(
+            "concrete_wall_008",
+            Color::srgb(0.3, 0.31, 0.36),
+            0.9,
+            0.0,
+            3.0,
+        );
+        let wall_tex_2 = textured(
+            "concrete_wall_008",
+            Color::srgb(0.36, 0.33, 0.34),
+            0.9,
+            0.0,
+            3.0,
+        );
+        let metal_tex = textured("metal_plate", Color::srgb(0.32, 0.36, 0.42), 0.8, 0.6, 2.0);
         let mut surface = |r: f32, g: f32, b: f32, roughness: f32, metallic: f32| {
             materials.add(StandardMaterial {
                 base_color: Color::srgb(r, g, b),
@@ -295,15 +363,15 @@ impl Palette {
             })
         };
         let concrete = [
-            surface(0.055, 0.06, 0.075, 0.85, 0.1),
-            surface(0.07, 0.065, 0.075, 0.75, 0.2),
-            surface(0.04, 0.05, 0.06, 0.6, 0.45),
+            wall_tex.unwrap_or_else(|| surface(0.055, 0.06, 0.075, 0.85, 0.1)),
+            wall_tex_2.unwrap_or_else(|| surface(0.07, 0.065, 0.075, 0.75, 0.2)),
+            metal_tex.unwrap_or_else(|| surface(0.04, 0.05, 0.06, 0.6, 0.45)),
         ];
         // Matte asphalt (above the reflection threshold); puddles are
         // near-mirrors, so the street reads wet in patches, not as glass.
-        let asphalt = surface(0.035, 0.038, 0.046, 0.5, 0.0);
+        let asphalt = asphalt_tex.unwrap_or_else(|| surface(0.035, 0.038, 0.046, 0.5, 0.0));
         let puddle = surface(0.012, 0.014, 0.02, 0.04, 0.0);
-        let sidewalk = surface(0.07, 0.075, 0.085, 0.45, 0.0);
+        let sidewalk = sidewalk_tex.unwrap_or_else(|| surface(0.07, 0.075, 0.085, 0.45, 0.0));
         let lamp_pole = surface(0.05, 0.05, 0.055, 0.4, 0.8);
         let skyline = surface(0.015, 0.018, 0.026, 0.9, 0.0);
         let mut glow = |color: LinearRgba| {
@@ -329,6 +397,8 @@ impl Palette {
             lamp_head: glow(LinearRgba::rgb(3.5, 3.0, 2.4)),
             skyline,
             beacon: glow(LinearRgba::rgb(12.0, 0.3, 0.2)),
+            tiled,
+            images,
         }
     }
 
@@ -341,23 +411,70 @@ impl Palette {
     }
 }
 
+/// A cuboid of `size` whose UVs run in metres / `tile` on every face, with
+/// tangents for normal mapping.
+pub fn tiled_cuboid(size: Vec3, tile: f32) -> Mesh {
+    let mut mesh = Mesh::from(Cuboid::new(size.x, size.y, size.z));
+    let positions: Vec<[f32; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+        Some(bevy::render::mesh::VertexAttributeValues::Float32x3(p)) => p.clone(),
+        _ => return mesh,
+    };
+    let normals: Vec<[f32; 3]> = match mesh.attribute(Mesh::ATTRIBUTE_NORMAL) {
+        Some(bevy::render::mesh::VertexAttributeValues::Float32x3(n)) => n.clone(),
+        _ => return mesh,
+    };
+    let uvs: Vec<[f32; 2]> = positions
+        .iter()
+        .zip(&normals)
+        .map(|(p, n)| {
+            let (u, v) = if n[0].abs() > 0.5 {
+                (p[2], p[1])
+            } else if n[1].abs() > 0.5 {
+                (p[0], p[2])
+            } else {
+                (p[0], p[1])
+            };
+            [u / tile, -v / tile]
+        })
+        .collect();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    let _ = mesh.generate_tangents();
+    mesh
+}
+
 fn block(
     commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
     palette: &Palette,
     material: Handle<StandardMaterial>,
     center: Vec3,
     size: Vec3,
     solid: bool,
 ) -> Entity {
+    // Textured surfaces get a real-size mesh so the texture tiles in metres;
+    // everything else shares the scaled unit cube.
+    let tile = palette.tile_for(&material);
+    let (mesh, transform, collider) = match tile {
+        Some(tile) => (
+            meshes.add(tiled_cuboid(size, tile)),
+            Transform::from_translation(center),
+            Collider::cuboid(size.x, size.y, size.z),
+        ),
+        None => (
+            palette.cube.clone(),
+            Transform::from_translation(center).with_scale(size),
+            // Unit-cube collider scaled with the transform.
+            Collider::cuboid(1.0, 1.0, 1.0),
+        ),
+    };
     let mut entity = commands.spawn((
         NeonDistrictPiece,
-        Mesh3d(palette.cube.clone()),
+        Mesh3d(mesh),
         MeshMaterial3d(material),
-        Transform::from_translation(center).with_scale(size),
+        transform,
     ));
     if solid {
-        // Unit-cube collider scaled with the transform.
-        entity.insert((RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0)));
+        entity.insert((RigidBody::Static, collider));
     }
     entity.id()
 }
@@ -366,15 +483,21 @@ pub fn spawn_neon_district(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Option<Res<AssetServer>>,
+    mipmaps: Option<ResMut<crate::mipmaps::MipmapTargets>>,
 ) {
     let layout = generate_district_layout(DISTRICT_SEED);
-    let palette = Palette::new(&mut meshes, &mut materials);
+    let palette = Palette::new(&mut meshes, &mut materials, assets.as_deref());
+    if let Some(mut mipmaps) = mipmaps {
+        mipmaps.0.extend(palette.images.iter().copied());
+    }
     let avenue_len = AVENUE_START_Z - AVENUE_END_Z;
     let avenue_mid = (AVENUE_START_Z + AVENUE_END_Z) * 0.5;
 
     // Ground: wet asphalt far beyond the avenue, raised sidewalks, lane dashes.
     block(
         &mut commands,
+        &mut meshes,
         &palette,
         palette.asphalt.clone(),
         Vec3::new(0.0, -0.5, -120.0),
@@ -385,6 +508,7 @@ pub fn spawn_neon_district(
         let width = FACADE_OFFSET - ROAD_HALF_WIDTH;
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.sidewalk.clone(),
             Vec3::new(
@@ -410,6 +534,7 @@ pub fn spawn_neon_district(
     while dash_z > AVENUE_END_Z {
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.lane_marking.clone(),
             Vec3::new(0.0, 0.01, dash_z),
@@ -423,6 +548,7 @@ pub fn spawn_neon_district(
         let body = palette.concrete[i % palette.concrete.len()].clone();
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             body,
             b.base_center + Vec3::Y * b.size.y * 0.5,
@@ -439,6 +565,7 @@ pub fn spawn_neon_district(
             };
             block(
                 &mut commands,
+                &mut meshes,
                 &palette,
                 material,
                 Vec3::new(
@@ -454,6 +581,7 @@ pub fn spawn_neon_district(
         // Storefront strip just above the doors.
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.strip(b.storefront),
             Vec3::new(face_x, 3.6, b.base_center.z),
@@ -483,6 +611,7 @@ pub fn spawn_neon_district(
             );
             block(
                 &mut commands,
+                &mut meshes,
                 &palette,
                 palette.neon(tone),
                 center,
@@ -526,6 +655,7 @@ pub fn spawn_neon_district(
         let side = light.base.x.signum();
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.lamp_pole.clone(),
             light.base + Vec3::Y * 3.5,
@@ -535,6 +665,7 @@ pub fn spawn_neon_district(
         let head = light.base + Vec3::new(-side * 1.2, 7.0, 0.0);
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.lamp_pole.clone(),
             light.base + Vec3::new(-side * 0.6, 7.05, 0.0),
@@ -543,6 +674,7 @@ pub fn spawn_neon_district(
         );
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.lamp_head.clone(),
             head - Vec3::Y * 0.1,
@@ -579,6 +711,7 @@ pub fn spawn_neon_district(
         // Cyan light line along the underside.
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.strip(NeonTone::Cyan),
             (start + end) * 0.5 - Vec3::Y * 0.25,
@@ -590,6 +723,7 @@ pub fn spawn_neon_district(
     for tower in &layout.skyline {
         block(
             &mut commands,
+            &mut meshes,
             &palette,
             palette.skyline.clone(),
             tower.base_center + Vec3::Y * tower.size.y * 0.5,
@@ -613,7 +747,13 @@ pub struct NeonDistrictPlugin;
 
 impl Plugin for NeonDistrictPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_neon_district);
+        app.init_resource::<crate::mipmaps::MipmapTargets>()
+            .add_systems(Startup, spawn_neon_district)
+            .add_systems(
+                Update,
+                crate::mipmaps::generate_mipmaps
+                    .run_if(resource_exists::<Events<AssetEvent<Image>>>),
+            );
     }
 }
 
