@@ -114,6 +114,46 @@ pub fn brow_at(p: Vec3, fit: &GarmentFit) -> f32 {
     best
 }
 
+/// Eyeshadow: a soft oval over each upper lid, reaching towards the brow
+/// and a little past the outer corner.
+pub fn eyeshadow_at(p: Vec3, fit: &GarmentFit) -> f32 {
+    let mut best: f32 = 0.0;
+    for eye in fit.eyes {
+        if p.z < eye.z - 0.006 {
+            continue;
+        }
+        let out = (p.x - eye.x) * eye.x.signum();
+        // Wide over the lid up to the brow bone, tight under the eye.
+        let dx = (out - 0.004) / 0.024;
+        let rise = p.y - (eye.y + 0.006);
+        let dy = rise / if rise > 0.0 { 0.011 } else { 0.0065 };
+        let r = (dx * dx + dy * dy).sqrt();
+        best = best.max(1.0 - smoothstep(0.35, 1.0, r));
+    }
+    best
+}
+
+/// Blush: a wide, very soft wash on each cheekbone.
+pub fn blush_at(p: Vec3, fit: &GarmentFit) -> f32 {
+    let mut best: f32 = 0.0;
+    for eye in fit.eyes {
+        if p.z < eye.z - 0.025 {
+            continue;
+        }
+        let out = (p.x - eye.x) * eye.x.signum();
+        let dx = (out - 0.006) / 0.022;
+        let dy = (p.y - (eye.y - 0.028)) / 0.016;
+        let r = (dx * dx + dy * dy).sqrt();
+        best = best.max((1.0 - r * r).max(0.0).powi(2));
+    }
+    best
+}
+
+fn smoothstep(lo: f32, hi: f32, x: f32) -> f32 {
+    let t = ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 /// Garment and suit coverage for every texel of the atlas.
 #[derive(Debug, Clone)]
 pub struct GarmentAtlas {
@@ -122,6 +162,8 @@ pub struct GarmentAtlas {
     pub trim: Vec<u8>,
     pub briefs_trim: Vec<u8>,
     pub brows: Vec<u8>,
+    pub shadow: Vec<u8>,
+    pub blush: Vec<u8>,
     /// 255 where a body triangle owns the texel (eyes, teeth and the
     /// like keep a neutral texture).
     pub body: Vec<u8>,
@@ -148,6 +190,8 @@ pub fn build_atlas(
         trim: vec![0; n],
         briefs_trim: vec![0; n],
         brows: vec![0; n],
+        shadow: vec![0; n],
+        blush: vec![0; n],
         body: vec![0; n],
         suit_skin: vec![255; n],
     };
@@ -192,6 +236,8 @@ pub fn build_atlas(
                 atlas.trim[i] = byte(trim);
                 atlas.briefs_trim[i] = byte(briefs * inside(p.y - (fit.waist - 0.016)));
                 atlas.brows[i] = byte(brow_at(p, fit));
+                atlas.shadow[i] = byte(eyeshadow_at(p, fit));
+                atlas.blush[i] = byte(blush_at(p, fit));
                 atlas.body[i] = 255;
                 atlas.suit_skin[i] =
                     byte(skin_blend[a] * w0 + skin_blend[b] * w1 + skin_blend[c] * w2);
@@ -244,6 +290,9 @@ pub fn compose_albedo(
     let trim = linear(look.accent) * 0.55 + Vec3::splat(0.02);
     let feminine = look.slider("gender") > 0.15;
     let brow = linear(look.hair_color) * 0.4;
+    let makeup = look.makeup.sanitized();
+    let shadow = linear(makeup.shadow_color);
+    let blush = linear(makeup.blush_color);
     let mut out = vec![0u8; detail.len() * 4];
     for (i, &d) in detail.iter().enumerate() {
         let d = f32::from(d) / 255.0;
@@ -261,6 +310,16 @@ pub fn compose_albedo(
                     .lerp(trim, f32::from(edge) / 255.0)
             }
         };
+        // Makeup sits on the skin, under the brows.
+        let c = c.lerp(
+            shadow * (0.75 + 0.25 * d),
+            f32::from(atlas.shadow[i]) / 255.0 * makeup.shadow_amount * 0.85,
+        );
+        let c = c.lerp(
+            c * (blush / tone.max(Vec3::splat(0.02)) * 0.9)
+                .clamp(Vec3::splat(0.6), Vec3::splat(1.6)),
+            f32::from(atlas.blush[i]) / 255.0 * makeup.blush_amount * 0.9,
+        );
         // Brows sit over skin and are never covered.
         let brow_amount = if look.brow_mesh.is_empty() {
             f32::from(atlas.brows[i]) / 255.0

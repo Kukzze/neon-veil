@@ -4,7 +4,8 @@
 
 use crate::character::accessories::{ProxyKind, ProxyLibrary};
 use crate::character::appearance::{
-    ACCENT_COLORS, EYE_COLORS, HAIR_COLORS, SKIN_TONES, SUIT_COLORS,
+    ACCENT_COLORS, BLUSH_COLORS, EYE_COLORS, HAIR_COLORS, LIP_COLORS, SHADOW_COLORS, SKIN_TONES,
+    SUIT_COLORS,
 };
 use crate::character::{
     save_appearance, spawn_operative_body, AppearancePath, CharacterAppearance, HairStyle,
@@ -527,6 +528,33 @@ pub fn creator_panel(
                         swatch_row(ui, "HAIR COLOUR", &HAIR_COLORS, &mut draft.hair_color);
                         swatch_row(ui, "SUIT", &SUIT_COLORS, &mut draft.suit);
                         swatch_row(ui, "ACCENT", &ACCENT_COLORS, &mut draft.accent);
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new("MAKEUP").color(ACCENT).size(13.0));
+                        let m = &mut draft.makeup;
+                        for (label, palette, color, amount) in [
+                            ("LIPS", &LIP_COLORS[..], &mut m.lip_color, &mut m.lip_amount),
+                            (
+                                "EYESHADOW",
+                                &SHADOW_COLORS[..],
+                                &mut m.shadow_color,
+                                &mut m.shadow_amount,
+                            ),
+                            (
+                                "BLUSH",
+                                &BLUSH_COLORS[..],
+                                &mut m.blush_color,
+                                &mut m.blush_amount,
+                            ),
+                        ] {
+                            swatch_row(ui, label, palette, color);
+                            ui.add(
+                                egui::Slider::new(amount, 0.0..=1.0)
+                                    .text("Intensity")
+                                    .show_value(false)
+                                    .trailing_fill(true),
+                            );
+                            ui.add_space(4.0);
+                        }
                     } else {
                         for slider in sliders_in(&library, &tab) {
                             let mut value = draft.slider(&slider.id);

@@ -45,6 +45,79 @@ pub const EYE_COLORS: [[f32; 3]; 6] = [
     [0.55, 0.35, 0.12],
     [0.0, 0.85, 1.0],
 ];
+pub const LIP_COLORS: [[f32; 3]; 6] = [
+    [0.72, 0.36, 0.38],
+    [0.78, 0.26, 0.32],
+    [0.62, 0.12, 0.16],
+    [0.42, 0.10, 0.18],
+    [0.86, 0.45, 0.42],
+    [0.18, 0.08, 0.14],
+];
+pub const SHADOW_COLORS: [[f32; 3]; 6] = [
+    [0.36, 0.24, 0.20],
+    [0.18, 0.12, 0.12],
+    [0.46, 0.28, 0.36],
+    [0.20, 0.22, 0.38],
+    [0.10, 0.36, 0.44],
+    [0.62, 0.42, 0.30],
+];
+pub const BLUSH_COLORS: [[f32; 3]; 4] = [
+    [0.88, 0.46, 0.46],
+    [0.92, 0.55, 0.42],
+    [0.76, 0.38, 0.48],
+    [0.66, 0.40, 0.34],
+];
+
+/// Face paint over the skin: lips, eyelids and cheeks.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Makeup {
+    pub lip_color: [f32; 3],
+    /// 0 is bare lips, 1 full colour.
+    pub lip_amount: f32,
+    pub shadow_color: [f32; 3],
+    pub shadow_amount: f32,
+    pub blush_color: [f32; 3],
+    pub blush_amount: f32,
+}
+
+impl Default for Makeup {
+    fn default() -> Self {
+        Self {
+            lip_color: LIP_COLORS[0],
+            lip_amount: 0.0,
+            shadow_color: SHADOW_COLORS[0],
+            shadow_amount: 0.0,
+            blush_color: BLUSH_COLORS[0],
+            blush_amount: 0.0,
+        }
+    }
+}
+
+impl Makeup {
+    /// Clamps amounts into [0, 1] and colours into [0, 1].
+    pub fn sanitized(mut self) -> Self {
+        let unit = |v: f32| {
+            if v.is_finite() {
+                v.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        for c in [
+            &mut self.lip_color,
+            &mut self.shadow_color,
+            &mut self.blush_color,
+        ] {
+            *c = c.map(unit);
+        }
+        self.lip_amount = unit(self.lip_amount);
+        self.shadow_amount = unit(self.shadow_amount);
+        self.blush_amount = unit(self.blush_amount);
+        self
+    }
+}
+
 pub const HAIR_COLORS: [[f32; 3]; 6] = [
     [0.04, 0.03, 0.03],
     [0.20, 0.12, 0.07],
@@ -130,6 +203,7 @@ pub struct CharacterAppearance {
     pub clothing: Vec<String>,
     pub suit: [f32; 3],
     pub accent: [f32; 3],
+    pub makeup: Makeup,
     pub card: PlayerCard,
 }
 
@@ -271,6 +345,28 @@ impl CharacterAppearance {
             },
             suit: SUIT_COLORS[suit],
             accent: ACCENT_COLORS[accent],
+            makeup: match preset {
+                Preset::Hana => Makeup {
+                    lip_color: LIP_COLORS[1],
+                    lip_amount: 0.8,
+                    shadow_amount: 0.45,
+                    blush_amount: 0.5,
+                    ..Makeup::default()
+                },
+                Preset::Wraith => Makeup {
+                    lip_color: LIP_COLORS[3],
+                    lip_amount: 0.9,
+                    shadow_color: SHADOW_COLORS[1],
+                    shadow_amount: 0.7,
+                    ..Makeup::default()
+                },
+                Preset::Runner => Makeup {
+                    lip_amount: 0.3,
+                    blush_amount: 0.2,
+                    ..Makeup::default()
+                },
+                _ => Makeup::default(),
+            },
             card: PlayerCard::default(),
         }
     }
@@ -343,6 +439,7 @@ impl CharacterAppearance {
             self.brow_mesh.clear();
         }
         self.clothing.retain(|c| safe_name(c));
+        self.makeup = self.makeup.sanitized();
         self.clothing.truncate(4);
         self.sliders.retain(|_, v| v.is_finite());
         for v in self.sliders.values_mut() {

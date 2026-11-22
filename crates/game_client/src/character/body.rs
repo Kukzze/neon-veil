@@ -183,7 +183,12 @@ pub fn vertex_color(region: Region, look: &CharacterAppearance) -> Vec3 {
     match region {
         Region::Skin | Region::Suit => Vec3::ONE,
         // These multiply the skin-toned albedo, so they are relative tints.
-        Region::Lips => Vec3::new(1.0, 0.8, 0.8),
+        Region::Lips => {
+            let makeup = look.makeup.sanitized();
+            let skin = linear(look.skin_tone).max(Vec3::splat(0.02));
+            let paint = (linear(makeup.lip_color) / skin).min(Vec3::splat(1.6));
+            Vec3::new(1.0, 0.8, 0.8).lerp(paint, makeup.lip_amount)
+        }
         Region::Nails => Vec3::new(1.06, 1.02, 1.0),
         Region::Scalp => match look.hair {
             HairStyle::Buzz => {
@@ -491,6 +496,8 @@ pub struct AlbedoKey {
     outfit: super::appearance::Outfit,
     feminine: bool,
     painted_brows: bool,
+    shadow: ([f32; 3], f32),
+    blush: ([f32; 3], f32),
 }
 
 impl AlbedoKey {
@@ -502,6 +509,8 @@ impl AlbedoKey {
             outfit: look.outfit,
             feminine: look.slider("gender") > 0.15,
             painted_brows: look.brow_mesh.is_empty(),
+            shadow: (look.makeup.shadow_color, look.makeup.shadow_amount),
+            blush: (look.makeup.blush_color, look.makeup.blush_amount),
         }
     }
 }
@@ -622,6 +631,17 @@ pub fn compose_albedos(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lipstick_tints_the_lips() {
+        use super::super::appearance::Preset;
+        let bare = CharacterAppearance::preset(Preset::Vanguard);
+        let painted = CharacterAppearance::preset(Preset::Wraith);
+        assert!(painted.makeup.lip_amount > 0.5);
+        let a = vertex_color(Region::Lips, &bare);
+        let b = vertex_color(Region::Lips, &painted);
+        assert!(b.y < a.y * 0.6, "{a} vs {b}");
+    }
 
     #[test]
     fn seams_share_normals() {
