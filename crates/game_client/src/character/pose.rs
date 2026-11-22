@@ -252,7 +252,7 @@ pub fn animate_bodies(
     avatars: Query<&OperativeAvatar>,
     roots: Query<(), With<OperativeBody>>,
     sources: Query<(
-        &KinematicVelocity,
+        Option<&KinematicVelocity>,
         Option<&ClientPredictionState>,
         Option<&MeleeCombatState>,
     )>,
@@ -267,18 +267,18 @@ pub fn animate_bodies(
             commands.entity(entity).insert(PoseState::default());
             continue;
         };
-        let source = parents
-            .get(body.root)
-            .ok()
-            .and_then(|p| avatars.get(p.get()).ok())
-            .and_then(|a| sources.get(a.source).ok());
+        // Players drive their avatar's body; enemies drive their own.
+        let source = parents.get(body.root).ok().and_then(|p| {
+            let owner = avatars.get(p.get()).map_or(p.get(), |a| a.source);
+            sources.get(owner).ok()
+        });
         let input = source.map_or_else(PoseInputs::default, |(velocity, prediction, melee)| {
             let movement = prediction.map(|p| p.movement);
             PoseInputs {
-                speed: Vec2::new(velocity.0.x, velocity.0.z).length(),
+                speed: velocity.map_or(0.0, |v| Vec2::new(v.0.x, v.0.z).length()),
                 airborne: movement.is_some_and(|m| !m.grounded),
                 sliding: movement.is_some_and(|m| m.sliding),
-                vertical: velocity.0.y,
+                vertical: velocity.map_or(0.0, |v| v.0.y),
                 attack: melee.and_then(|m| {
                     let attack = m.current_attack?;
                     (m.attack_phase != AttackPhase::Idle).then(|| {

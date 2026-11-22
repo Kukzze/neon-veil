@@ -2,6 +2,7 @@
 //! Gorgon. Enemies are simulation entities (capsule centre at their
 //! transform); this module dresses them when they appear.
 
+use crate::character::{spawn_operative_body_at, CharacterAppearance, MorphLibrary, Preset};
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 use game_ai::{BossGorgon, Enemy, EnemyArchetype, EnemyDefeatedEvent};
@@ -158,6 +159,116 @@ fn part(
 }
 
 /// A humanoid built around the capsule centre (feet at -0.93).
+/// The capsule centre sits this far above the feet.
+const ENEMY_FEET: f32 = 0.93;
+
+/// A Syndicate look for `archetype`; `seed` varies the face and build so
+/// no two enemies in a wave are twins.
+pub fn enemy_look(
+    archetype: EnemyArchetype,
+    seed: u64,
+    face_sliders: &[&str],
+) -> CharacterAppearance {
+    use crate::character::appearance::{HAIR_COLORS, SKIN_TONES, SUIT_COLORS};
+    use EnemyArchetype::*;
+    let feminine = seed % 3 == 0;
+    let preset = match archetype {
+        ShieldedHeavy | MechaEnforcer => Preset::Bruiser,
+        CyberNinja if feminine => Preset::Wraith,
+        CyberNinja => Preset::Jun,
+        Netrunner if feminine => Preset::Hana,
+        Netrunner => Preset::Jun,
+        _ if feminine => Preset::Runner,
+        _ => Preset::Vanguard,
+    };
+    let mut look = CharacterAppearance::preset(preset);
+    look.randomize(face_sliders, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    look.set_slider("muscle", look.slider("muscle").max(0.3));
+    look.skin_tone = SKIN_TONES[(seed as usize / 7) % SKIN_TONES.len()];
+    look.hair_color = HAIR_COLORS[(seed as usize / 3) % 3];
+    look.suit = SUIT_COLORS[0];
+    look.lashes = true;
+    let (clothes, hair): (&[&str], &[&str]) = match archetype {
+        ShieldedHeavy | MechaEnforcer => (&["male_worksuit01", "shoes06"], &["short02", "short01"]),
+        CyberNinja => (
+            if feminine {
+                &["female_sportsuit01", "shoes02"]
+            } else {
+                &["male_casualsuit01", "shoes02"]
+            },
+            if feminine {
+                &["ponytail01", "braid01"]
+            } else {
+                &["short04", "short03"]
+            },
+        ),
+        Netrunner => (
+            if feminine {
+                &["female_elegantsuit01", "shoes02"]
+            } else {
+                &["male_casualsuit04", "shoes01"]
+            },
+            if feminine {
+                &["bob01", "bob02"]
+            } else {
+                &["short03"]
+            },
+        ),
+        _ => (
+            if feminine {
+                &["female_casualsuit01", "shoes02"]
+            } else {
+                &["male_casualsuit04", "shoes01"]
+            },
+            if feminine {
+                &["bob02", "long01"]
+            } else {
+                &["short01", "short03", "short04"]
+            },
+        ),
+    };
+    look.clothing = clothes.iter().map(|s| (*s).to_owned()).collect();
+    look.hair_mesh = hair[(seed as usize) % hair.len()].to_owned();
+    look
+}
+
+/// Weapons and gear carried on top of the body.
+fn spawn_enemy_gear(parent: &mut ChildBuilder, a: &EnemyAssets, build: &Build) {
+    let accent = (build.accent)(a);
+    if build.shield {
+        parent.spawn(part(
+            &a.cube,
+            &a.plate,
+            Vec3::new(0.0, 0.05, -0.5),
+            Vec3::new(0.95, 1.35, 0.08),
+        ));
+        parent.spawn(part(
+            &a.cube,
+            &accent,
+            Vec3::new(0.0, 0.05, -0.55),
+            Vec3::new(0.7, 0.05, 0.02),
+        ));
+    }
+    if build.blade {
+        parent.spawn(part(
+            &a.cube,
+            &accent,
+            Vec3::new(0.32, -0.05, -0.4),
+            Vec3::new(0.025, 0.02, 0.9),
+        ));
+    }
+    // A glowing Syndicate collar so enemies read as enemies at night.
+    parent.spawn((
+        part(
+            &a.cube,
+            &accent,
+            Vec3::new(0.0, 0.52, -0.02),
+            Vec3::new(0.22, 0.025, 0.22),
+        ),
+        NotShadowCaster,
+    ));
+}
+
 fn spawn_humanoid(parent: &mut ChildBuilder, a: &EnemyAssets, build: &Build) {
     let accent = (build.accent)(a);
     let w = build.bulk;
@@ -362,21 +473,46 @@ fn spawn_health_bar(commands: &mut Commands, a: &EnemyAssets, owner: Entity, hei
 pub fn dress_new_enemies(
     mut commands: Commands,
     assets: Res<EnemyAssets>,
+    asset_server: Res<AssetServer>,
+    library: Option<Res<MorphLibrary>>,
     enemies: Query<(Entity, &Enemy), Added<Enemy>>,
     bosses: Query<Entity, Added<BossGorgon>>,
 ) {
+    let face_sliders: Vec<&str> = library.as_deref().map_or_else(Vec::new, |l| {
+        l.sliders
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s.category.as_str(),
+                    "Head" | "Jaw" | "Face" | "Eyes" | "Nose" | "Mouth" | "Ears"
+                )
+            })
+            .map(|s| s.id.as_str())
+            .collect()
+    });
     for (entity, enemy) in &enemies {
         let flying = enemy.archetype == EnemyArchetype::SwarmDrone;
+        let build = build_for(enemy.archetype);
         commands
             .entity(entity)
             .insert(Visibility::default())
             .with_children(|root| {
                 if flying {
                     spawn_drone(root, &assets);
+                } else if library.is_some() {
+                    spawn_enemy_gear(root, &assets, &build);
                 } else {
-                    spawn_humanoid(root, &assets, &build_for(enemy.archetype));
+                    spawn_humanoid(root, &assets, &build);
                 }
             });
+        if !flying && library.is_some() {
+            // A real human body: feet on the ground, facing the enemy's forward.
+            let look = enemy_look(enemy.archetype, entity.to_bits(), &face_sliders);
+            let at = Transform::from_xyz(0.0, -ENEMY_FEET, 0.0)
+                .with_rotation(Quat::from_rotation_y(std::f32::consts::PI))
+                .with_scale(Vec3::splat(build.scale));
+            spawn_operative_body_at(&mut commands, &asset_server, entity, look, at);
+        }
         let height = if flying {
             0.7
         } else {

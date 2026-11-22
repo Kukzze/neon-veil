@@ -484,6 +484,43 @@ pub fn apply_start_encounter(
     commands.remove_resource::<StartAtEncounter>();
 }
 
+/// Lines up one of each humanoid Syndicate archetype in front of the
+/// player (screenshots and look checks); consumed once spawned.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShowcaseEnemies;
+
+pub fn spawn_showcase(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut waited: Local<f32>,
+    showcase: Option<Res<ShowcaseEnemies>>,
+    players: Query<&Transform, With<LocalPredictedPlayer>>,
+) {
+    if showcase.is_none() {
+        return;
+    }
+    // Let the player settle at their start point first.
+    *waited += time.delta_secs();
+    if *waited < 1.5 {
+        return;
+    }
+    let Ok(player) = players.get_single() else {
+        return;
+    };
+    let lineup = [StreetGrunt, CyberNinja, ShieldedHeavy, Netrunner];
+    for (i, archetype) in lineup.into_iter().enumerate() {
+        let x = -3.6 + i as f32 * 2.4;
+        let at = Vec3::new(x, ENEMY_STANDING_Y, player.translation.z - 9.0);
+        let enemy = spawn_enemy(&mut commands, archetype, at);
+        commands.entity(enemy).insert((
+            ViewAngles::new(std::f32::consts::PI, 0.0),
+            Transform::from_translation(at)
+                .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+        ));
+    }
+    commands.remove_resource::<ShowcaseEnemies>();
+}
+
 /// Night One, for the windowed offline client.
 pub struct MissionPlugin;
 
@@ -493,7 +530,7 @@ impl Plugin for MissionPlugin {
             .init_resource::<MissionScript>()
             .add_systems(
                 Update,
-                (apply_start_encounter, run_mission)
+                (apply_start_encounter, spawn_showcase, run_mission)
                     .chain()
                     .run_if(in_state(crate::creator::GameFlow::Playing))
                     .run_if(not(resource_exists::<crate::tutorial::TutorialActive>)),

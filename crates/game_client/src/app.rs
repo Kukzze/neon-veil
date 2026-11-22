@@ -59,6 +59,8 @@ pub struct ClientOptions {
     pub preset: Option<crate::character::Preset>,
     /// Run the tutorial even if it was completed.
     pub tutorial: bool,
+    /// Line up one of each enemy in front of the player.
+    pub showcase: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,6 +86,7 @@ where
             "--greybox" => options.greybox = true,
             "--creator" => options.creator = true,
             "--tutorial" => options.tutorial = true,
+            "--showcase" => options.showcase = true,
             "--preset" => {
                 let name = args.next().ok_or("--preset needs a preset name")?;
                 let wanted = name.as_ref().to_ascii_lowercase();
@@ -304,6 +307,9 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             if let Some(n) = options.checkpoint {
                 app.insert_resource(crate::mission::StartAtEncounter(n));
             }
+            if options.showcase {
+                app.insert_resource(crate::mission::ShowcaseEnemies);
+            }
         }
     }
     let saved = crate::character::load_appearance(&crate::character::AppearancePath::default().0);
@@ -463,7 +469,8 @@ mod tests {
                 creator: false,
                 creator_face: false,
                 preset: None,
-                tutorial: false
+                tutorial: false,
+                showcase: false
             })
         );
         assert_eq!(

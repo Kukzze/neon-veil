@@ -305,8 +305,14 @@ pub fn behavior_tree_for(archetype: EnemyArchetype) -> BehaviorNode<AiAction> {
 }
 
 /// The ranged weapon an archetype carries.
+/// Scale applied to enemy weapon damage.
+pub const ENEMY_DAMAGE_SCALE: f32 = 0.35;
+
 pub fn weapon_for(archetype: EnemyArchetype) -> Option<BallisticProfile> {
-    let base = BallisticProfile::for_archetype(archetype_stats(archetype).ranged?);
+    let mut base = BallisticProfile::for_archetype(archetype_stats(archetype).ranged?);
+    // Enemy guns hit softer than the player's: a squad should pressure one
+    // operative, not delete them in seconds.
+    base.base_damage *= ENEMY_DAMAGE_SCALE;
     Some(if archetype == EnemyArchetype::MechaEnforcer {
         // Rotary chaingun: the rifle action spun up.
         BallisticProfile {
@@ -314,7 +320,7 @@ pub fn weapon_for(archetype: EnemyArchetype) -> Option<BallisticProfile> {
             magazine_capacity: 200,
             current_ammo: 200,
             reserve_ammo: 2000,
-            base_damage: 14.0,
+            base_damage: 14.0 * ENEMY_DAMAGE_SCALE,
             status_effect_affinity: None,
             ..base
         }

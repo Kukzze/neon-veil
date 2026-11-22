@@ -111,14 +111,27 @@ pub fn spawn_operative_body(
     parent: Entity,
     appearance: CharacterAppearance,
 ) -> Entity {
+    // The MakeHuman body faces +Z; the game's forward is -Z.
+    let facing = Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI));
+    spawn_operative_body_at(commands, assets, parent, appearance, facing)
+}
+
+/// Like [`spawn_operative_body`], with an explicit local transform (for
+/// parents whose origin is not at the feet).
+pub fn spawn_operative_body_at(
+    commands: &mut Commands,
+    assets: &AssetServer,
+    parent: Entity,
+    appearance: CharacterAppearance,
+    transform: Transform,
+) -> Entity {
     let body = commands
         .spawn((
             Name::new("Operative Body"),
             OperativeBody,
             appearance,
             SceneRoot(assets.load(BODY_SCENE)),
-            // The MakeHuman body faces +Z; the game's forward is -Z.
-            Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+            transform,
         ))
         .id();
     commands.entity(parent).add_child(body);

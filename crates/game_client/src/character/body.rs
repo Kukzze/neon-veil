@@ -506,6 +506,10 @@ impl AlbedoKey {
     }
 }
 
+/// Composed albedos and their materials by look.
+#[derive(Default)]
+pub struct AlbedoCache(HashMap<String, (Handle<Image>, Handle<StandardMaterial>)>);
+
 /// Shared atlas data, built from the first prepared body.
 #[derive(Resource)]
 pub struct SkinAtlas {
@@ -525,6 +529,7 @@ pub fn compose_albedos(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut bodies: Query<(&mut BodyInstance, &mut MeshMaterial3d<StandardMaterial>)>,
     looks: Query<&CharacterAppearance>,
+    mut cache: Local<AlbedoCache>,
 ) {
     use super::skin_texture::{build_atlas, compose_albedo, GarmentFit, SrgbTable, ATLAS_SIZE};
     use bevy::render::render_asset::RenderAssetUsages;
@@ -581,8 +586,16 @@ pub fn compose_albedos(
             .copied()
             .take(ATLAS_SIZE * ATLAS_SIZE)
             .collect();
+        // Bodies with the same colours, outfit and gender side share one
+        // albedo and material (a wave of enemies composes each look once).
+        let cache_key = format!("{key:?}");
+        if let Some((image, handle)) = cache.0.get(&cache_key).cloned() {
+            material.0 = handle.clone();
+            body.albedo = Some((key, image, handle));
+            continue;
+        }
         let rgba = compose_albedo(&atlas.garments, &gray, look, &atlas.table);
-        let image = Image::new(
+        let image = images.add(Image::new(
             Extent3d {
                 width: ATLAS_SIZE as u32,
                 height: ATLAS_SIZE as u32,
@@ -592,21 +605,15 @@ pub fn compose_albedos(
             rgba,
             TextureFormat::Rgba8UnormSrgb,
             RenderAssetUsages::RENDER_WORLD,
-        );
-        let image = images.add(image);
-        let handle = match &body.albedo {
-            Some((_, _, existing)) => {
-                if let Some(m) = materials.get_mut(existing) {
-                    m.base_color_texture = Some(image.clone());
-                }
-                existing.clone()
-            }
-            None => {
-                let mut m = materials.get(&base.template).cloned().unwrap_or_default();
-                m.base_color_texture = Some(image.clone());
-                materials.add(m)
-            }
-        };
+        ));
+        let mut m = materials.get(&base.template).cloned().unwrap_or_default();
+        m.base_color_texture = Some(image.clone());
+        let handle = materials.add(m);
+        // Keep the cache small: looks edited in the creator churn it.
+        if cache.0.len() > 24 {
+            cache.0.clear();
+        }
+        cache.0.insert(cache_key, (image.clone(), handle.clone()));
         material.0 = handle.clone();
         body.albedo = Some((key, image, handle));
     }
