@@ -16,6 +16,8 @@ pub const LINE_PADDING_SECONDS: f32 = 0.6;
 /// working directory.
 pub const TUTORIAL_DIALOGUE_MANIFEST: &str =
     include_str!("../../../assets/audio/voiceovers/dialogue_manifest.json");
+pub const MISSION_ONE_DIALOGUE_MANIFEST: &str =
+    include_str!("../../../assets/audio/voiceovers/mission_one_manifest.json");
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceCueData {
@@ -89,6 +91,9 @@ pub struct DialogueEntry {
     pub voice_id: String,
     pub text: String,
     pub output_path: String,
+    /// Measured length of the recorded line, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,7 +116,10 @@ impl DialogueEntry {
             speaker: self.speaker.clone(),
             text: self.text.clone(),
             audio_path: self.output_path.clone(),
-            duration_seconds: estimated_duration_seconds(&self.text),
+            duration_seconds: self.duration_ms.map_or_else(
+                || estimated_duration_seconds(&self.text),
+                |ms| ms as f32 / 1000.0 + LINE_PADDING_SECONDS,
+            ),
         }
     }
 }
@@ -123,6 +131,11 @@ impl DialogueManifest {
 
     pub fn tutorial() -> Self {
         Self::parse(TUTORIAL_DIALOGUE_MANIFEST).expect("embedded dialogue manifest is valid")
+    }
+
+    /// Voiced dialogue for the first mission, Night One.
+    pub fn mission_one() -> Self {
+        Self::parse(MISSION_ONE_DIALOGUE_MANIFEST).expect("embedded mission manifest is valid")
     }
 
     pub fn find(&self, cue_id: &str) -> Option<&DialogueEntry> {

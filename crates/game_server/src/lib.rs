@@ -11,7 +11,9 @@ pub mod transport;
 pub use lag_compensation::{
     HistoricalHitboxFrame, ServerLagCompensationBuffer, HISTORY_BUFFER_TICKS,
 };
-pub use movement::{simulate_movement_step, NetworkMovement, SPRINT_SPEED, WALK_SPEED};
+pub use movement::{
+    simulate_movement_step, MovementState, NetworkMovement, SPRINT_SPEED, WALK_SPEED,
+};
 pub use persistence::{PersistenceEngine, PlayerSaveRecord};
 pub use server_network::{
     player_network_id, ClientConnectedEvent, ClientDisconnectedEvent, ConnectedClient,

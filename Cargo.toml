@@ -26,7 +26,7 @@ authors = [
     "Daksh Rawat (Kukzze) <dakshrawat320@gmail.com>",
 ]
 license = "Proprietary"
-repository = "https://github.com/CuttingOnionStudios/neon-veil"
+repository = "https://github.com/Kukzze/neon-veil"
 rust-version = "1.82.0"
 
 [workspace.dependencies]
@@ -104,7 +104,7 @@ bevy_egui = "0.31.1"
 egui_plot = "0.29.0"
 
 # Audio Synthesis & Playback
-kira = { version = "0.9.6", default-features = false, features = ["cpal", "symphonia"] }
+kira = { version = "0.9.6", default-features = false, features = ["cpal", "ogg"] }
 
 # Platform & Integrations
 # Workspace dependencies cannot be optional; optionality is declared per crate.

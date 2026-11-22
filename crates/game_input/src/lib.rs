@@ -19,7 +19,7 @@ pub use actions::{
 pub use aim_assist::{AimAssistSettings, AimAssistTarget};
 pub use packet_builder::{
     apply_look_input, build_input_packets, latch_action_presses, ActionPressLatch,
-    LocalPlayerInput, LookSettings,
+    GameplayInputGate, LocalPlayerInput, LookSettings,
 };
 
 use bevy::prelude::*;
@@ -47,6 +47,8 @@ impl Plugin for GameInputPlugin {
         }
         app.init_resource::<AimAssistSettings>()
             .init_resource::<LookSettings>()
+            .init_resource::<GameplayInputGate>()
+            .register_type::<GameplayInputGate>()
             .register_type::<AimAssistSettings>()
             .register_type::<LookSettings>()
             .register_type::<AimAssistTarget>()

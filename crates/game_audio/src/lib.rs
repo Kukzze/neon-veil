@@ -8,7 +8,9 @@
 pub mod audio_bus;
 pub mod dynamic_music;
 pub mod foley_catalog;
+pub mod output;
 pub mod spatial;
+pub mod synth;
 pub mod voiceover_player;
 
 pub use audio_bus::{
@@ -17,6 +19,7 @@ pub use audio_bus::{
 };
 pub use dynamic_music::{calculate_parkour_wind_volume, DynamicMusicMixer, MusicOutputLevels};
 pub use foley_catalog::{find_sound_cue, SoundCueDefinition, MASTER_AUDIO_CATALOG};
+pub use output::{AudioListener, AudioOutputPlugin, VoiceAssetRoot};
 pub use spatial::{calculate_spatial_gain, SpatialAudioEmitter, SpatialAudioOutput};
 pub use voiceover_player::{DialogueEntry, DialogueManifest, VoiceCueData, VoiceoverQueue};
 

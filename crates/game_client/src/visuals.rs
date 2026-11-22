@@ -3,6 +3,7 @@
 //! operative avatar, and the local player's starting kit.
 
 use crate::client_network::{apply_visual_error_decay, LocalPredictedPlayer, PredictedVisual};
+use avian3d::prelude::{Collider, RigidBody};
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
 use bevy::pbr::{
@@ -11,6 +12,7 @@ use bevy::pbr::{
 };
 use bevy::prelude::*;
 use game_camera::CameraRigController;
+use game_combat::{AttackPhase, MeleeCombatState};
 use game_economy::PlayerInventory;
 use game_input::{default_input_map, local_player_input_bundle};
 use game_parkour::{FlowState, KinematicVelocity};
@@ -20,9 +22,16 @@ use game_ui::HudFont;
 use game_world::district_manifest::get_district_at_position;
 
 pub const HUD_FONT_PATH: &str = "fonts/JetBrainsMono-Medium.ttf";
+pub const HUD_TITLE_FONT_PATH: &str = "fonts/Rajdhani-Bold.ttf";
 /// Height of the avatar's hips above its feet; the simulated position is
 /// the feet.
 pub const AVATAR_HIP_HEIGHT: f32 = 0.83;
+/// Height of the player hurtbox centre above the feet.
+pub const PLAYER_HURTBOX_CENTER: f32 = 0.93;
+/// Brightness of the fill light carried by the camera.
+const CAMERA_FILL_LUMENS: f32 = 90_000.0;
+/// Operative health; shields absorb the first 100 points.
+pub const PLAYER_MAX_HEALTH: f32 = 150.0;
 const AVATAR_TURN_RATE: f32 = 12.0;
 const AVATAR_MAX_LEAN: f32 = 0.2;
 const ATMOSPHERE_EASE_RATE: f32 = 1.5;
@@ -45,6 +54,14 @@ pub struct OperativeAvatar {
     pub source: Entity,
     pub yaw: f32,
 }
+
+/// The avatar part that pivots at the hips (leans, crouches into slides).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct AvatarBody;
+
+/// The katana resting in its sheath; hidden while the blade is drawn.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct SheathedBlade;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct RainDrop;
@@ -112,6 +129,8 @@ pub struct AvatarAssets {
     edge_light: Handle<Mesh>,
     backpack: Handle<Mesh>,
     vent: Handle<Mesh>,
+    slash_arc: Handle<Mesh>,
+    slash: Handle<StandardMaterial>,
 }
 
 impl AvatarAssets {
@@ -127,36 +146,31 @@ impl AvatarAssets {
         };
         Self {
             // Lighter, glossier plates pick up neon reflections in the rain.
-            armor: material(Color::srgb(0.09, 0.1, 0.13), 0.28, 0.85, LinearRgba::BLACK),
-            fabric: material(
-                Color::srgb(0.02, 0.025, 0.035),
-                0.55,
-                0.2,
-                LinearRgba::BLACK,
-            ),
+            armor: material(Color::srgb(0.42, 0.45, 0.5), 0.38, 0.25, LinearRgba::BLACK),
+            fabric: material(Color::srgb(0.1, 0.11, 0.13), 0.7, 0.05, LinearRgba::BLACK),
             visor: material(
                 Color::srgb(0.0, 0.2, 0.25),
                 0.3,
                 0.0,
-                LinearRgba::rgb(0.0, 24.0, 32.0),
+                LinearRgba::rgb(0.0, 3.5, 5.0),
             ),
             core: material(
                 Color::srgb(0.0, 0.15, 0.2),
                 0.3,
                 0.0,
-                LinearRgba::rgb(0.0, 16.0, 22.0),
+                LinearRgba::rgb(0.0, 2.5, 3.5),
             ),
             thruster: material(
                 Color::srgb(0.2, 0.08, 0.01),
                 0.3,
                 0.0,
-                LinearRgba::rgb(18.0, 8.0, 0.0),
+                LinearRgba::rgb(4.0, 1.8, 0.0),
             ),
             blade: material(
                 Color::srgb(0.0, 0.2, 0.3),
                 0.3,
                 0.0,
-                LinearRgba::rgb(0.0, 20.0, 28.0),
+                LinearRgba::rgb(0.0, 4.0, 6.0),
             ),
             torso: meshes.add(Cuboid::new(0.48, 0.58, 0.28)),
             chest_core: meshes.add(Cuboid::new(0.12, 0.16, 0.04)),
@@ -173,12 +187,27 @@ impl AvatarAssets {
             edge_light: meshes.add(Cuboid::new(0.15, 0.022, 0.23)),
             backpack: meshes.add(Cuboid::new(0.3, 0.32, 0.1)),
             vent: meshes.add(Cuboid::new(0.07, 0.04, 0.02)),
+            slash_arc: meshes.add(crate::combat_fx::slash_arc_mesh(
+                0.55,
+                1.45,
+                crate::combat_fx::SWING_HALF_ANGLE,
+                24,
+            )),
+            slash: materials.add(StandardMaterial {
+                base_color: Color::srgba(0.35, 0.95, 1.0, 0.55),
+                emissive: LinearRgba::rgb(0.0, 6.0, 9.0),
+                alpha_mode: AlphaMode::Add,
+                unlit: true,
+                cull_mode: None,
+                ..default()
+            }),
         }
     }
 }
 
 fn load_hud_font(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(HudFont(assets.load(HUD_FONT_PATH)));
+    commands.insert_resource(game_ui::HudTitleFont(assets.load(HUD_TITLE_FONT_PATH)));
 }
 
 fn setup_night_scene(
@@ -213,37 +242,52 @@ fn setup_night_scene(
 
     // The camera exists from the first frame (the HUD renders through it)
     // and follows the player once the session spawns them.
-    commands.spawn((
-        Camera3d::default(),
-        Camera {
-            hdr: true,
-            ..default()
-        },
-        Tonemapping::AgX,
-        DebandDither::Enabled,
-        // Deferred shading with screen-space reflections: the wet asphalt
-        // mirrors the neon. Deferred rendering requires MSAA off.
-        Msaa::Off,
-        ScreenSpaceReflections {
-            perceptual_roughness_threshold: 0.35,
-            thickness: 0.3,
-            linear_steps: 24,
-            ..default()
-        },
-        Bloom {
-            intensity: 0.28,
-            ..Bloom::NATURAL
-        },
-        DistanceFog {
-            color: state.fog_color,
-            falloff: FogFalloff::ExponentialSquared {
-                density: state.fog_density,
+    commands
+        .spawn((
+            Camera3d::default(),
+            Camera {
+                hdr: true,
+                ..default()
             },
-            ..default()
-        },
-        CameraRigController::default(),
-        Transform::from_xyz(0.0, 3.0, 6.0).looking_at(Vec3::new(0.0, 1.5, -20.0), Vec3::Y),
-    ));
+            Tonemapping::AgX,
+            DebandDither::Enabled,
+            // Deferred shading with screen-space reflections: the wet asphalt
+            // mirrors the neon. Deferred rendering requires MSAA off.
+            Msaa::Off,
+            ScreenSpaceReflections {
+                perceptual_roughness_threshold: 0.35,
+                thickness: 0.3,
+                linear_steps: 24,
+                ..default()
+            },
+            Bloom {
+                intensity: 0.12,
+                ..Bloom::NATURAL
+            },
+            DistanceFog {
+                color: state.fog_color,
+                falloff: FogFalloff::ExponentialSquared {
+                    density: state.fog_density,
+                },
+                ..default()
+            },
+            CameraRigController::default(),
+            game_audio::AudioListener,
+            Transform::from_xyz(0.0, 3.0, 6.0).looking_at(Vec3::new(0.0, 1.5, -20.0), Vec3::Y),
+        ))
+        // Soft fill that travels with the camera so the operative always reads
+        // against the night, whatever neon is nearby.
+        .with_child((
+            PointLight {
+                color: Color::srgb(0.85, 0.92, 1.0),
+                intensity: CAMERA_FILL_LUMENS,
+                range: 10.0,
+                radius: 0.5,
+                shadows_enabled: false,
+                ..default()
+            },
+            Transform::from_xyz(0.6, 0.8, 0.0),
+        ));
     commands.insert_resource(state);
 
     // Rain: thin additive streaks recycled inside a box around the camera.
@@ -372,12 +416,20 @@ fn attach_local_player_presentation(
         }
         commands.entity(player).insert((
             local_player_input_bundle(default_input_map()),
-            Health::new(100.0),
+            Health::new(PLAYER_MAX_HEALTH),
             Shields::default(),
             FlowState::default(),
             CharacterSkills::default(),
             PlayerQuestLog::default(),
             starter_inventory(),
+            MeleeCombatState::default(),
+            // Hurtbox for enemy attacks; the simulated position is the feet.
+            RigidBody::Kinematic,
+            Collider::compound(vec![(
+                Vec3::Y * PLAYER_HURTBOX_CENTER,
+                Quat::IDENTITY,
+                Collider::capsule(0.35, 1.1),
+            )]),
         ));
         spawn_operative_avatar(&mut commands, &assets, player);
     }
@@ -398,6 +450,7 @@ pub fn spawn_operative_avatar(commands: &mut Commands, a: &AvatarAssets, source:
         .with_children(|root| {
             // Body pivots at the hips so leaning looks natural.
             root.spawn((
+                AvatarBody,
                 Transform::from_xyz(0.0, AVATAR_HIP_HEIGHT, 0.0),
                 Visibility::default(),
             ))
@@ -449,10 +502,25 @@ pub fn spawn_operative_avatar(commands: &mut Commands, a: &AvatarAssets, source:
                     &a.armor,
                     Transform::from_xyz(0.08, 0.22, 0.17).with_rotation(blade_tilt),
                 ));
-                body.spawn(part(
-                    &a.blade_edge,
-                    &a.blade,
-                    Transform::from_xyz(0.08, 0.22, 0.19).with_rotation(blade_tilt),
+                body.spawn((
+                    SheathedBlade,
+                    part(
+                        &a.blade_edge,
+                        &a.blade,
+                        Transform::from_xyz(0.08, 0.22, 0.19).with_rotation(blade_tilt),
+                    ),
+                ));
+                body.spawn((
+                    crate::combat_fx::DrawnKatana { source },
+                    part(&a.blade_edge, &a.blade, Transform::default()),
+                    Visibility::Hidden,
+                    NotShadowCaster,
+                ));
+                body.spawn((
+                    crate::combat_fx::SlashTrail { source },
+                    part(&a.slash_arc, &a.slash, Transform::default()),
+                    Visibility::Hidden,
+                    NotShadowCaster,
                 ));
                 // The third-person camera sees the back: give it light.
                 body.spawn(part(
@@ -494,13 +562,25 @@ pub fn facing_yaw(velocity: Vec3) -> Option<f32> {
 /// Runs after the visual-offset pass, which positions the avatar.
 fn orient_avatars(
     time: Res<Time>,
-    sources: Query<&KinematicVelocity>,
+    sources: Query<(
+        &KinematicVelocity,
+        Option<&MeleeCombatState>,
+        Option<&game_core::input::ViewAngles>,
+    )>,
     mut avatars: Query<(&mut OperativeAvatar, &mut Transform)>,
 ) {
     let t = 1.0 - (-AVATAR_TURN_RATE * time.delta_secs()).exp();
     for (mut avatar, mut transform) in &mut avatars {
-        let velocity = sources.get(avatar.source).map_or(Vec3::ZERO, |v| v.0);
-        if let Some(target) = facing_yaw(velocity) {
+        let (velocity, melee, view) = sources
+            .get(avatar.source)
+            .map_or((Vec3::ZERO, None, None), |(v, m, view)| (v.0, m, view));
+        // Fighting faces the camera so swings go where the player aims.
+        let fighting = melee.is_some_and(|m| m.attack_phase != AttackPhase::Idle || m.is_parrying);
+        let target = match view {
+            Some(view) if fighting => Some(view.yaw),
+            _ => facing_yaw(velocity),
+        };
+        if let Some(target) = target {
             let delta = (target - avatar.yaw + std::f32::consts::PI)
                 .rem_euclid(std::f32::consts::TAU)
                 - std::f32::consts::PI;
@@ -525,6 +605,11 @@ impl Plugin for VisualsPlugin {
                 (
                     attach_local_player_presentation,
                     orient_avatars.after(apply_visual_error_decay),
+                    crate::combat_fx::face_local_player_to_camera,
+                    crate::combat_fx::animate_katana,
+                    crate::combat_fx::pose_avatar_bodies,
+                    crate::gameplay_audio::emit_movement_sounds,
+                    crate::gameplay_audio::emit_combat_sounds,
                     update_district_atmosphere,
                     update_rain,
                 ),

@@ -43,9 +43,27 @@ pub struct ClientOptions {
     /// Save one rendered frame here after the scene settles, then exit
     /// (visual QA and store screenshots).
     pub capture: Option<std::path::PathBuf>,
+    /// Capture view as whole degrees (yaw, pitch); defaults to [`CAPTURE_VIEW`].
+    pub capture_view: Option<(i32, i32)>,
+    /// UI panel to show open in the capture.
+    pub open_panel: Option<UiPanel>,
+    /// Start Night One at this encounter (1-3, 4 for the Gorgon).
+    pub checkpoint: Option<u8>,
+    /// Seconds to wait before the capture (default 6).
+    pub capture_after: Option<u32>,
 }
 
-/// Parses `[--connect <address>] [--greybox] [--capture <file.png>]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiPanel {
+    Skills,
+    Inventory,
+    Settings,
+    Pause,
+    Controls,
+}
+
+/// Parses `[--connect <address>] [--greybox] [--capture <file.png>]
+/// [--capture-view <yaw>,<pitch>] [--open-panel skills|inventory|settings]`.
 pub fn parse_client_args<I, S>(args: I) -> Result<ClientOptions, String>
 where
     I: IntoIterator<Item = S>,
@@ -71,6 +89,53 @@ where
                     .next()
                     .ok_or("--capture needs a file path, e.g. shot.png")?;
                 options.capture = Some(path.as_ref().into());
+            }
+            "--capture-view" => {
+                let spec = args
+                    .next()
+                    .ok_or("--capture-view needs <yaw>,<pitch> in degrees")?;
+                let (yaw, pitch) = spec
+                    .as_ref()
+                    .split_once(',')
+                    .and_then(|(y, p)| Some((y.trim().parse().ok()?, p.trim().parse().ok()?)))
+                    .ok_or_else(|| {
+                        format!(
+                            "invalid --capture-view {:?}, expected e.g. 20,-5",
+                            spec.as_ref()
+                        )
+                    })?;
+                options.capture_view = Some((yaw, pitch));
+            }
+            "--capture-after" => {
+                let secs = args
+                    .next()
+                    .and_then(|s| s.as_ref().parse().ok())
+                    .filter(|s| (1..=600).contains(s))
+                    .ok_or("--capture-after needs whole seconds from 1 to 600")?;
+                options.capture_after = Some(secs);
+            }
+            "--checkpoint" => {
+                let n: u8 = args
+                    .next()
+                    .and_then(|n| n.as_ref().parse().ok())
+                    .filter(|n| (1..=4).contains(n))
+                    .ok_or("--checkpoint needs an encounter number from 1 to 4")?;
+                options.checkpoint = Some(n);
+            }
+            "--open-panel" => {
+                options.open_panel = Some(match args.next().as_ref().map(AsRef::as_ref) {
+                    Some("skills") => UiPanel::Skills,
+                    Some("inventory") => UiPanel::Inventory,
+                    Some("settings") => UiPanel::Settings,
+                    Some("pause") => UiPanel::Pause,
+                    Some("controls") => UiPanel::Controls,
+                    _ => {
+                        return Err(
+                            "--open-panel needs skills, inventory, settings, pause or controls"
+                                .into(),
+                        )
+                    }
+                });
             }
             other => return Err(format!("unknown argument {other:?}")),
         }
@@ -197,10 +262,30 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
         add_once(&mut app, game_dev_tools::DevToolsPlugin);
     } else {
         add_once(&mut app, game_world::NeonDistrictPlugin);
+        // The story mission runs its encounters locally, so it is offline only.
+        if options.session == SessionMode::Offline {
+            app.add_plugins(crate::mission::MissionPlugin);
+            if let Some(n) = options.checkpoint {
+                app.insert_resource(crate::mission::StartAtEncounter(n));
+            }
+        }
     }
-    app.add_plugins(crate::visuals::VisualsPlugin);
+    app.add_plugins((
+        crate::visuals::VisualsPlugin,
+        crate::enemy_visuals::EnemyVisualsPlugin,
+        game_audio::AudioOutputPlugin,
+    ))
+    .insert_resource(game_audio::VoiceAssetRoot(asset_root()));
     if let Some(path) = options.capture {
-        app.insert_resource(FrameCapture::new(path))
+        let view = options.capture_view.map_or(CAPTURE_VIEW, |(yaw, pitch)| {
+            ((yaw as f32).to_radians(), (pitch as f32).to_radians())
+        });
+        let mut capture = FrameCapture::new(path).with_view(view);
+        capture.open_panel = options.open_panel;
+        if let Some(secs) = options.capture_after {
+            capture.after_seconds = secs as f32;
+        }
+        app.insert_resource(capture)
             .add_systems(Update, capture_frame_and_exit);
     }
     install_session(&mut app, options.session)?;
@@ -216,6 +301,25 @@ pub struct FrameCapture {
     pub path: std::path::PathBuf,
     pub after_seconds: f32,
     pub requested_at: Option<f32>,
+    /// View yaw and pitch held during the capture, radians.
+    pub view: (f32, f32),
+    /// Panel opened shortly before the shot (opening it at launch would
+    /// pause the game before the session connects).
+    pub open_panel: Option<UiPanel>,
+}
+
+fn open_ui_panel(world: &mut World, panel: UiPanel) {
+    match panel {
+        UiPanel::Skills => world.resource_mut::<game_ui::SkillsModalState>().is_open = true,
+        UiPanel::Inventory => world.resource_mut::<game_ui::InventoryModalState>().is_open = true,
+        UiPanel::Settings => world.resource_mut::<game_ui::SettingsModalState>().is_open = true,
+        UiPanel::Pause => world.resource_mut::<game_ui::PauseMenuState>().open(),
+        UiPanel::Controls => {
+            let mut pause = world.resource_mut::<game_ui::PauseMenuState>();
+            pause.open();
+            pause.page = game_ui::PausePage::Controls;
+        }
+    }
 }
 
 impl FrameCapture {
@@ -224,13 +328,20 @@ impl FrameCapture {
             path,
             after_seconds: 6.0,
             requested_at: None,
+            view: CAPTURE_VIEW,
+            open_panel: None,
         }
+    }
+
+    pub fn with_view(mut self, view: (f32, f32)) -> Self {
+        self.view = view;
+        self
     }
 }
 
 fn capture_frame_and_exit(
     mut commands: Commands,
-    time: Res<Time>,
+    time: Res<Time<Real>>,
     mut capture: ResMut<FrameCapture>,
     mut exit: EventWriter<AppExit>,
     mut views: Query<
@@ -241,9 +352,14 @@ fn capture_frame_and_exit(
     use bevy::render::view::screenshot::{save_to_disk, Screenshot};
     // Repeatable framing: look straight up the avenue, slightly down.
     for mut view in &mut views {
-        *view = game_core::input::ViewAngles::new(CAPTURE_VIEW.0, CAPTURE_VIEW.1);
+        *view = game_core::input::ViewAngles::new(capture.view.0, capture.view.1);
     }
     let now = time.elapsed_secs();
+    if now >= capture.after_seconds - 1.5 {
+        if let Some(panel) = capture.open_panel.take() {
+            commands.queue(move |world: &mut World| open_ui_panel(world, panel));
+        }
+    }
     match capture.requested_at {
         None if now >= capture.after_seconds => {
             commands
@@ -281,7 +397,11 @@ mod tests {
             Ok(ClientOptions {
                 session: SessionMode::Connect(addr),
                 greybox: true,
-                capture: None
+                capture: None,
+                capture_view: None,
+                open_panel: None,
+                checkpoint: None,
+                capture_after: None
             })
         );
         assert_eq!(

@@ -242,11 +242,11 @@ pub struct AirstrikeMarker {
 /// Dual thermal claymores, overclocked chaingun, jump-jets.
 pub fn spawn_boss_gorgon(commands: &mut Commands, position: Vec3) -> Entity {
     let chaingun = BallisticProfile {
-        rounds_per_minute: 900,
+        rounds_per_minute: 420,
         magazine_capacity: 300,
         current_ammo: 300,
         reserve_ammo: 3000,
-        base_damage: 18.0,
+        base_damage: 4.0,
         status_effect_affinity: None,
         ..BallisticProfile::pulse_assault_rifle()
     };

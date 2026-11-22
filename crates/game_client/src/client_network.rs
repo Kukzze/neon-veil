@@ -23,7 +23,7 @@ use game_core::protocol::{
 };
 use game_core::time::NetworkTick;
 use game_parkour::KinematicVelocity;
-use game_server::movement::simulate_movement_step;
+use game_server::movement::{simulate_movement_step, MovementState};
 use game_server::player_network_id;
 use std::collections::{HashMap, VecDeque};
 
@@ -31,6 +31,8 @@ use std::collections::{HashMap, VecDeque};
 pub const INPUT_BUFFER_CAPACITY: usize = 128;
 /// Divergence that triggers a rollback.
 pub const ERROR_CORRECTION_THRESHOLD_METERS: f32 = 0.05;
+/// Corrections beyond this are treated as teleports and not smoothed.
+pub const TELEPORT_SNAP_METERS: f32 = 4.0;
 /// Exponential decay rate of the visual correction, 1/s.
 pub const VISUAL_DECAY_RATE: f32 = 20.0;
 /// Inputs sent per tick: the current one plus the previous ones again.
@@ -79,6 +81,8 @@ pub struct ClientPredictionState {
     pub last_server_tick: NetworkTick,
     pub first_input_tick: Option<NetworkTick>,
     pub corrections: u32,
+    /// Movement state after the newest predicted tick.
+    pub movement: MovementState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -126,7 +130,7 @@ impl ClientPredictionState {
             .filter(|p| p.tick == tick)
             .copied()
         {
-            simulate_movement_step(&input, position, velocity);
+            simulate_movement_step(&input, position, velocity, &mut self.movement);
             self.predicted_positions.retain(|(t, _)| *t != tick);
             self.predicted_positions.push_back((tick, *position));
             while self.predicted_positions.len() > INPUT_BUFFER_CAPACITY {
@@ -194,18 +198,24 @@ pub fn reconcile_with_server_state(
     let shown_before = prediction.visual_position(*position);
     *position = server.position;
     *velocity = server.velocity;
+    prediction.movement = MovementState::unpack(server.state_flags);
     let replay: Vec<PlayerInputPacket> = prediction.input_history.iter().copied().collect();
     prediction.predicted_positions.clear();
     prediction
         .predicted_positions
         .push_back((last_processed, server.position));
     for input in &replay {
-        simulate_movement_step(input, position, velocity);
+        simulate_movement_step(input, position, velocity, &mut prediction.movement);
         prediction
             .predicted_positions
             .push_back((input.tick, *position));
     }
-    prediction.visual_error_offset = shown_before - *position;
+    // Large corrections are teleports (respawns): snap instead of gliding.
+    prediction.visual_error_offset = if error > TELEPORT_SNAP_METERS {
+        Vec3::ZERO
+    } else {
+        shown_before - *position
+    };
     prediction.corrections += 1;
     ReconcileOutcome::Corrected {
         error,

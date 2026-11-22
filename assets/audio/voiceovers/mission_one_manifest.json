@@ -1,0 +1,103 @@
+{
+  "project": "NEON_VEIL_ZERO_PROTOCOL",
+  "version": "1.1.0",
+  "default_model_id": "eleven_v4",
+  "dialogues": [
+    {
+      "cue_id": "M1_00_INTRO",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "They scrubbed your memory and left you for scrap in Sector Zero. Bad call on their part. Your cyberware's still ticking, kid. Get up. We've got a city to take back.",
+      "output_path": "assets/audio/voiceovers/m1_00_intro.ogg",
+      "duration_ms": 10480
+    },
+    {
+      "cue_id": "M1_01_AURA_ONLINE",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Neural link restored. Motor control nominal. Katana synced to your spine mount. Syndicate patrols are sweeping Kuroshio Avenue.",
+      "output_path": "assets/audio/voiceovers/m1_01_aura_online.ogg",
+      "duration_ms": 9040
+    },
+    {
+      "cue_id": "M1_02_PATROL",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "Three Syndicate grunts dead ahead. Cheap muscle with cheap guns. Get in close and cut them down.",
+      "output_path": "assets/audio/voiceovers/m1_02_patrol.ogg",
+      "duration_ms": 5680
+    },
+    {
+      "cue_id": "M1_03_PATROL_CLEAR",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Patrol neutralized. Their comms went dark. Somebody upstairs will have noticed.",
+      "output_path": "assets/audio/voiceovers/m1_03_patrol_clear.ogg",
+      "duration_ms": 5440
+    },
+    {
+      "cue_id": "M1_04_NINJAS",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Warning. Cloaked signatures closing fast. Cyber-ninjas and hunter drones. Keep moving, and guard their strikes.",
+      "output_path": "assets/audio/voiceovers/m1_04_ninjas.ogg",
+      "duration_ms": 7440
+    },
+    {
+      "cue_id": "M1_05_NINJAS_CLEAR",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "Ha! Ninjas folding like cheap umbrellas. You haven't lost your touch.",
+      "output_path": "assets/audio/voiceovers/m1_05_ninjas_clear.ogg",
+      "duration_ms": 5840
+    },
+    {
+      "cue_id": "M1_06_HEAVY",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "Heads up. They sent a Shielded Heavy and a netrunner. Get around that shield. Don't trade hits head on.",
+      "output_path": "assets/audio/voiceovers/m1_06_heavy.ogg",
+      "duration_ms": 6400
+    },
+    {
+      "cue_id": "M1_07_HEAVY_CLEAR",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Heavy unit down. Network intrusion purged. The Syndicate enforcer is moving to intercept.",
+      "output_path": "assets/audio/voiceovers/m1_07_heavy_clear.ogg",
+      "duration_ms": 5920
+    },
+    {
+      "cue_id": "M1_08_BOSS_INTRO",
+      "speaker": "The Gorgon",
+      "voice_id": "QjEdRoRdZC2i3ncmFpNy",
+      "text": "So the scrap walks. I put you in the ground once, operative. Tonight, I make sure you stay there.",
+      "output_path": "assets/audio/voiceovers/m1_08_boss_intro.ogg",
+      "duration_ms": 9840
+    },
+    {
+      "cue_id": "M1_09_BOSS_PHASE",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "The Gorgon is overheating. Its armor is cracking. Strike now!",
+      "output_path": "assets/audio/voiceovers/m1_09_boss_phase.ogg",
+      "duration_ms": 4480
+    },
+    {
+      "cue_id": "M1_10_VICTORY",
+      "speaker": "Viktor Vance",
+      "voice_id": "dWi43pgmQOjZTMYtl9lg",
+      "text": "The Gorgon's down. Kuroshio's ours tonight. Welcome back, operative. This was only the first protocol.",
+      "output_path": "assets/audio/voiceovers/m1_10_victory.ogg",
+      "duration_ms": 8080
+    },
+    {
+      "cue_id": "M1_11_FLATLINE",
+      "speaker": "AURA",
+      "voice_id": "rL5thyifUCj65q3mamdf",
+      "text": "Vital signs critical. Rebooting neural link. Get back on your feet, operative.",
+      "output_path": "assets/audio/voiceovers/m1_11_flatline.ogg",
+      "duration_ms": 5680
+    }
+  ]
+}

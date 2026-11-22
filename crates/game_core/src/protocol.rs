@@ -14,7 +14,17 @@ pub use crate::time::NetworkTick;
 
 /// Bumped on every incompatible change to the message layout.
 /// v2: added `InputActions::MELEE_HEAVY`. v3: added `InputActions::RELOAD`.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
+
+/// Places the server may respawn a player at, by index: the avenue start
+/// and the checkpoint before each Night One encounter.
+pub const RESPAWN_CHECKPOINTS: [Vec3; 5] = [
+    Vec3::new(0.0, 0.0, 0.0),
+    Vec3::new(0.0, 0.0, -40.0),
+    Vec3::new(0.0, 0.0, -108.0),
+    Vec3::new(0.0, 0.0, -172.0),
+    Vec3::new(0.0, 0.0, -208.0),
+];
 
 /// Bit flags carried in [`PlayerInputPacket::actions`].
 pub struct InputActions;
@@ -126,6 +136,8 @@ pub enum ClientMessage {
     Interact(u32),
     /// Client timestamp echoed back in [`ServerMessage::Pong`] for RTT.
     Ping(u64),
+    /// Respawn at [`RESPAWN_CHECKPOINTS`]`[index]`; other indices are ignored.
+    Respawn(u8),
 }
 
 /// Messages sent server -> client.

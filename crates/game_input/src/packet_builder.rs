@@ -124,10 +124,19 @@ pub fn latch_action_presses(
     }
 }
 
+/// While `blocked` (a menu has focus) look input is ignored and input
+/// packets carry no movement or actions, so the character stands still.
+#[derive(Resource, Reflect, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[reflect(Resource, Default, Debug)]
+pub struct GameplayInputGate {
+    pub blocked: bool,
+}
+
 /// Applies mouse and stick look to [`ViewAngles`], with aim assist on the
 /// stick only.
 pub fn apply_look_input(
     time: Res<Time>,
+    gate: Option<Res<GameplayInputGate>>,
     look: Res<LookSettings>,
     assist: Res<AimAssistSettings>,
     targets: Query<(&GlobalTransform, &AimAssistTarget)>,
@@ -140,6 +149,9 @@ pub fn apply_look_input(
         With<LocalPlayerInput>,
     >,
 ) {
+    if gate.is_some_and(|g| g.blocked) {
+        return;
+    }
     let dt = time.delta_secs();
     for (state, mut view, transform) in &mut players {
         let mouse = state.axis_pair(&PlayerAction::Look);
@@ -175,6 +187,7 @@ pub fn apply_look_input(
 /// `FixedPreUpdate`, before the simulation reads `PlayerInputState`.
 pub fn build_input_packets(
     tick: Res<CurrentNetworkTick>,
+    gate: Option<Res<GameplayInputGate>>,
     mut players: Query<
         (
             &ActionState<PlayerAction>,
@@ -186,7 +199,17 @@ pub fn build_input_packets(
     >,
 ) {
     for (state, view, mut latch, mut input) in &mut players {
-        let packet = build_input_packet(state, *view, tick.0, latch.bits);
+        let blocked = gate.as_ref().is_some_and(|g| g.blocked);
+        let packet = if blocked {
+            PlayerInputPacket {
+                tick: tick.0,
+                pitch: view.pitch,
+                yaw: view.yaw,
+                ..Default::default()
+            }
+        } else {
+            build_input_packet(state, *view, tick.0, latch.bits)
+        };
         latch.bits = 0;
         input.push(packet);
     }

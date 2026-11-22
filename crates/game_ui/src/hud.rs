@@ -6,7 +6,10 @@
 //! allocations and triggers no re-layout. Bars ease toward their values.
 
 use bevy::prelude::*;
-use game_combat::{BallisticProfile, MeleeHitEvent, RangedHitEvent, RangedWeaponArchetype};
+use game_combat::{
+    AttackPhase, BallisticProfile, MeleeCombatState, MeleeHitEvent, RangedHitEvent,
+    RangedWeaponArchetype,
+};
 use game_core::identifiers::PlayerCharacterMarker;
 use game_core::input::ViewAngles;
 use game_parkour::flow_state::{FlowTier, FLOW_MAX, FLOW_OVERDRIVE_MULTIPLIER};
@@ -17,8 +20,26 @@ use std::fmt::Write;
 pub const CYAN: Color = Color::srgb(0.0, 229.0 / 255.0, 1.0);
 pub const EMERALD: Color = Color::srgb(46.0 / 255.0, 204.0 / 255.0, 113.0 / 255.0);
 pub const AMBER: Color = Color::srgb(1.0, 170.0 / 255.0, 0.0);
-pub const PANEL: Color = Color::srgba(0.02, 0.04, 0.06, 0.72);
-pub const BAR_TRACK: Color = Color::srgba(1.0, 1.0, 1.0, 0.08);
+pub const PANEL: Color = Color::srgba(0.02, 0.035, 0.055, 0.78);
+/// Opaque panel tone, used to cut segment ticks into bars.
+pub const PANEL_SOLID: Color = Color::srgb(0.02, 0.035, 0.055);
+pub const BAR_TRACK: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
+pub const TEXT: Color = Color::srgba(0.93, 0.96, 1.0, 0.95);
+pub const MUTED: Color = Color::srgba(0.75, 0.84, 0.95, 0.55);
+pub const HAIRLINE: Color = Color::srgba(0.0, 0.9, 1.0, 0.3);
+pub const DANGER: Color = Color::srgb(1.0, 0.27, 0.33);
+const HEALTH_OK: Color = Color::srgb(0.9, 0.95, 1.0);
+/// Damage trail behind shield and health fills.
+const TRAIL: Color = Color::srgba(1.0, 0.85, 0.75, 0.55);
+/// Health fraction below which the bar turns red.
+pub const LOW_HEALTH_FRACTION: f32 = 0.3;
+const VITAL_BAR_WIDTH: f32 = 230.0;
+const COMPASS_WIDTH: f32 = 460.0;
+/// Characters in the compass tape; each covers [`COMPASS_DEGREES_PER_CHAR`].
+pub const COMPASS_TAPE_CHARS: usize = 45;
+pub const COMPASS_DEGREES_PER_CHAR: i32 = 5;
+/// Damage trails catch up slower than fills, 1/s.
+const TRAIL_EASE_RATE: f32 = 3.0;
 
 /// Bar easing rate, 1/s.
 const BAR_EASE_RATE: f32 = 12.0;
@@ -48,6 +69,22 @@ pub struct AmmoCounterUi;
 #[derive(Component, Debug, Default)]
 pub struct CompassStripUi;
 
+#[derive(Component, Debug, Default)]
+pub struct CompassTapeUi;
+
+#[derive(Component, Debug, Default)]
+pub struct HealthValueUi;
+
+#[derive(Component, Debug, Default)]
+pub struct WeaponNameUi;
+
+#[derive(Component, Debug, Default)]
+pub struct FireModeUi;
+
+/// One of the three melee combo indicators.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComboPip(pub u8);
+
 /// Crosshair container; `gap_px` is the current arm distance from center.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct CrosshairUi {
@@ -72,6 +109,8 @@ pub enum HudBarKind {
     Health,
     Stamina,
     Flow,
+    ShieldTrail,
+    HealthTrail,
 }
 
 /// A fill bar; `displayed` eases toward the live fraction.
@@ -105,16 +144,9 @@ fn display_value(value: f32) -> u32 {
     }
 }
 
-pub fn write_vitals_text(out: &mut String, shields: (f32, f32), health: (f32, f32)) {
+pub fn write_vital_value(out: &mut String, value: f32) {
     out.clear();
-    let _ = write!(
-        out,
-        "SHIELDS {} / {}  |  HP {} / {}",
-        display_value(shields.0),
-        display_value(shields.1),
-        display_value(health.0),
-        display_value(health.1)
-    );
+    let _ = write!(out, "{}", display_value(value));
 }
 
 pub fn flow_tier_label(out: &mut String, tier: FlowTier, overdrive_multiplier: f32) {
@@ -149,24 +181,24 @@ pub fn fire_mode_label(archetype: RangedWeaponArchetype) -> &'static str {
 pub fn write_ammo_text(out: &mut String, weapon: Option<&BallisticProfile>) {
     out.clear();
     match weapon {
-        Some(w) if w.reload_timer > 0.0 => {
-            let _ = write!(
-                out,
-                "RELOADING // {} [{}]",
-                w.reserve_ammo,
-                fire_mode_label(w.archetype)
-            );
-        }
+        Some(w) if w.reload_timer > 0.0 => out.push_str("RELOADING"),
         Some(w) => {
-            let _ = write!(
-                out,
-                "{} // {} [{}]",
-                w.current_ammo,
-                w.reserve_ammo,
-                fire_mode_label(w.archetype)
-            );
+            let _ = write!(out, "{} / {}", w.current_ammo, w.reserve_ammo);
         }
-        None => out.push_str("-- // -- [MELEE]"),
+        None => out.push_str("3-HIT COMBO"),
+    }
+}
+
+/// Name shown on the weapon card.
+pub fn weapon_display_name(weapon: Option<&BallisticProfile>) -> &'static str {
+    match weapon.map(|w| w.archetype) {
+        None => "CYBER-KATANA",
+        Some(RangedWeaponArchetype::KineticPistol) => "KINETIC PISTOL",
+        Some(RangedWeaponArchetype::SmartSubmachineGun) => "SMART SMG",
+        Some(RangedWeaponArchetype::PulseAssaultRifle) => "PULSE RIFLE",
+        Some(RangedWeaponArchetype::PlasmaShotgun) => "PLASMA SHOTGUN",
+        Some(RangedWeaponArchetype::TechSniperRifle) => "TECH SNIPER",
+        Some(RangedWeaponArchetype::ChargeRailgun) => "CHARGE RAILGUN",
     }
 }
 
@@ -186,6 +218,36 @@ pub fn compass_heading_degrees(yaw: f32) -> u32 {
 pub fn cardinal_direction(heading_degrees: u32) -> &'static str {
     const NAMES: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     NAMES[(((heading_degrees % 360) as f32 + 22.5) / 45.0) as usize % 8]
+}
+
+/// A scrolling compass tape centred on `heading_degrees`: cardinal and
+/// intercardinal labels every 45 degrees, ticks every 15.
+pub fn write_compass_tape(out: &mut String, heading_degrees: u32) {
+    const LABELS: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    let mut cells = [' '; COMPASS_TAPE_CHARS];
+    let half = (COMPASS_TAPE_CHARS / 2) as i32;
+    // The tape scrolls one character (5 degrees) at a time.
+    let step = COMPASS_DEGREES_PER_CHAR;
+    let heading = ((heading_degrees as i32 + step / 2) / step) * step;
+    for (i, cell) in cells.iter_mut().enumerate() {
+        let angle = (heading + (i as i32 - half) * COMPASS_DEGREES_PER_CHAR).rem_euclid(360);
+        if angle % 15 == 0 && angle % 45 != 0 {
+            *cell = '\u{b7}';
+        }
+    }
+    for i in 0..COMPASS_TAPE_CHARS {
+        let angle = (heading + (i as i32 - half) * COMPASS_DEGREES_PER_CHAR).rem_euclid(360);
+        if angle % 45 == 0 {
+            let label = LABELS[(angle / 45) as usize];
+            for (k, ch) in label.chars().enumerate() {
+                if let Some(cell) = cells.get_mut(i + k) {
+                    *cell = ch;
+                }
+            }
+        }
+    }
+    out.clear();
+    out.extend(cells);
 }
 
 pub fn write_compass_text(out: &mut String, yaw: f32, objective: Option<(&str, f32)>) {
@@ -230,7 +292,7 @@ fn ease_factor(rate: f32, dt: f32) -> f32 {
     1.0 - (-rate * dt.max(0.0)).exp()
 }
 
-fn hud_text(font: &Handle<Font>, text: &str, size: f32, color: Color) -> impl Bundle {
+pub(crate) fn hud_text(font: &Handle<Font>, text: &str, size: f32, color: Color) -> impl Bundle {
     (
         Text::new(text),
         TextFont {
@@ -242,31 +304,97 @@ fn hud_text(font: &Handle<Font>, text: &str, size: f32, color: Color) -> impl Bu
     )
 }
 
-fn bar(parent: &mut ChildBuilder, kind: HudBarKind, color: Color, width_px: f32) {
+/// One labelled vital: label, segmented bar with a damage trail, value.
+fn vital_row(
+    parent: &mut ChildBuilder,
+    font: &Handle<Font>,
+    label: &str,
+    fill: (HudBarKind, Color),
+    trail: HudBarKind,
+    value: impl Bundle,
+) {
     parent
-        .spawn((
-            Node {
-                width: Val::Px(width_px),
-                height: Val::Px(6.0),
-                margin: UiRect::vertical(Val::Px(3.0)),
-                ..default()
-            },
-            BackgroundColor(BAR_TRACK),
-        ))
-        .with_children(|track| {
-            track.spawn((
+        .spawn(Node {
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(10.0),
+            margin: UiRect::vertical(Val::Px(3.0)),
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                hud_text(font, label, 11.0, MUTED),
                 Node {
+                    width: Val::Px(52.0),
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Node {
+                    width: Val::Px(VITAL_BAR_WIDTH),
+                    height: Val::Px(10.0),
+                    ..default()
+                },
+                BackgroundColor(BAR_TRACK),
+            ))
+            .with_children(|track| {
+                let full = Node {
+                    position_type: PositionType::Absolute,
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
                     ..default()
-                },
-                BackgroundColor(color),
-                HudBar {
-                    kind,
-                    displayed: 1.0,
-                },
-            ));
+                };
+                track.spawn((
+                    full.clone(),
+                    BackgroundColor(TRAIL),
+                    HudBar {
+                        kind: trail,
+                        displayed: 1.0,
+                    },
+                ));
+                track.spawn((
+                    full,
+                    BackgroundColor(fill.1),
+                    HudBar {
+                        kind: fill.0,
+                        displayed: 1.0,
+                    },
+                ));
+                // Segment ticks every 10%.
+                for i in 1..10 {
+                    track.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(i as f32 * 10.0),
+                            width: Val::Px(2.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(PANEL_SOLID),
+                    ));
+                }
+            });
+            row.spawn((Node {
+                width: Val::Px(40.0),
+                justify_content: JustifyContent::FlexEnd,
+                ..default()
+            },))
+                .with_children(|cell| {
+                    cell.spawn(value);
+                });
         });
+}
+
+fn card(accent: Color) -> (Node, BackgroundColor, BorderColor) {
+    (
+        Node {
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::new(Val::Px(14.0), Val::Px(16.0), Val::Px(10.0), Val::Px(12.0)),
+            border: UiRect::left(Val::Px(3.0)),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        BorderColor(accent),
+    )
 }
 
 /// Spawns the HUD tree.
@@ -274,8 +402,17 @@ fn bar(parent: &mut ChildBuilder, kind: HudBarKind, color: Color, width_px: f32)
 #[derive(Resource, Debug, Clone)]
 pub struct HudFont(pub Handle<Font>);
 
-pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>>) {
+/// Display face for headings and the weapon name.
+#[derive(Resource, Debug, Clone)]
+pub struct HudTitleFont(pub Handle<Font>);
+
+pub fn setup_cyberpunk_hud(
+    mut commands: Commands,
+    hud_font: Option<Res<HudFont>>,
+    title_font: Option<Res<HudTitleFont>>,
+) {
     let font = hud_font.map(|f| f.0.clone()).unwrap_or_default();
+    let title = title_font.map_or_else(|| font.clone(), |f| f.0.clone());
     commands
         .spawn((
             Name::new("HUD"),
@@ -291,26 +428,49 @@ pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>
             },
         ))
         .with_children(|root| {
-            // Top center: compass and objective.
+            // Top centre: compass tape with a centre notch, heading below.
             root.spawn(Node {
                 width: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
                 ..default()
             })
             .with_children(|top| {
                 top.spawn((
                     Node {
-                        padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                        width: Val::Px(COMPASS_WIDTH),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                        border: UiRect::bottom(Val::Px(1.0)),
                         ..default()
                     },
                     BackgroundColor(PANEL),
+                    BorderColor(HAIRLINE),
                 ))
-                .with_children(|panel| {
-                    panel.spawn((hud_text(&font, "N 000\u{b0}", 16.0, CYAN), CompassStripUi));
+                .with_children(|strip| {
+                    strip.spawn((
+                        Node {
+                            width: Val::Px(2.0),
+                            height: Val::Px(6.0),
+                            margin: UiRect::bottom(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(CYAN),
+                    ));
+                    strip.spawn((hud_text(&font, "", 13.0, TEXT), CompassTapeUi));
                 });
+                top.spawn((
+                    hud_text(&font, "N 000\u{b0}", 12.0, CYAN),
+                    CompassStripUi,
+                    Node {
+                        margin: UiRect::top(Val::Px(6.0)),
+                        ..default()
+                    },
+                ));
             });
 
-            // Center: crosshair and hit marker.
+            // Centre: crosshair and hit marker.
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
@@ -345,10 +505,21 @@ pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>
                             }),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
                         CrosshairArm { axis },
                     ));
                 }
+                center.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(-1.5),
+                        top: Val::Px(-1.5),
+                        width: Val::Px(3.0),
+                        height: Val::Px(3.0),
+                        ..default()
+                    },
+                    BackgroundColor(CYAN),
+                ));
                 center.spawn((
                     Node {
                         position_type: PositionType::Absolute,
@@ -362,7 +533,7 @@ pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>
                 ));
             });
 
-            // Bottom: vitals and flow on the left, ammo on the right.
+            // Bottom: vitals card on the left, weapon card on the right.
             root.spawn(Node {
                 width: Val::Percent(100.0),
                 justify_content: JustifyContent::SpaceBetween,
@@ -370,43 +541,98 @@ pub fn setup_cyberpunk_hud(mut commands: Commands, hud_font: Option<Res<HudFont>
                 ..default()
             })
             .with_children(|bottom| {
-                bottom
-                    .spawn((
+                bottom.spawn(card(CYAN)).with_children(|vitals| {
+                    vitals.spawn((
+                        hud_text(&title, "OPERATIVE", 15.0, TEXT),
                         Node {
-                            flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(12.0)),
+                            margin: UiRect::bottom(Val::Px(6.0)),
                             ..default()
                         },
-                        BackgroundColor(PANEL),
-                    ))
-                    .with_children(|vitals| {
-                        vitals.spawn((
-                            hud_text(&font, "SHIELDS 0 / 0  |  HP 0 / 0", 16.0, EMERALD),
-                            HealthShieldBarUi,
-                        ));
-                        bar(vitals, HudBarKind::Shield, CYAN, 240.0);
-                        bar(vitals, HudBarKind::Health, EMERALD, 240.0);
-                        bar(vitals, HudBarKind::Stamina, AMBER, 160.0);
-                        vitals.spawn((
-                            hud_text(&font, "FLOW   0% // Base", 13.0, AMBER),
-                            FlowMeterUi,
-                        ));
-                        bar(vitals, HudBarKind::Flow, AMBER, 160.0);
-                    });
-                bottom
-                    .spawn((
-                        Node {
-                            padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+                    ));
+                    vital_row(
+                        vitals,
+                        &font,
+                        "SHIELD",
+                        (HudBarKind::Shield, CYAN),
+                        HudBarKind::ShieldTrail,
+                        (hud_text(&font, "0", 15.0, CYAN), HealthShieldBarUi),
+                    );
+                    vital_row(
+                        vitals,
+                        &font,
+                        "HEALTH",
+                        (HudBarKind::Health, HEALTH_OK),
+                        HudBarKind::HealthTrail,
+                        (hud_text(&font, "0", 15.0, TEXT), HealthValueUi),
+                    );
+                    vitals
+                        .spawn(Node {
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(10.0),
+                            margin: UiRect::top(Val::Px(8.0)),
                             ..default()
-                        },
-                        BackgroundColor(PANEL),
-                    ))
-                    .with_children(|ammo| {
-                        ammo.spawn((
-                            hud_text(&font, "-- // -- [MELEE]", 26.0, CYAN),
-                            AmmoCounterUi,
-                        ));
-                    });
+                        })
+                        .with_children(|row| {
+                            row.spawn((
+                                Node {
+                                    width: Val::Px(VITAL_BAR_WIDTH * 0.55),
+                                    height: Val::Px(3.0),
+                                    ..default()
+                                },
+                                BackgroundColor(BAR_TRACK),
+                            ))
+                            .with_children(|track| {
+                                track.spawn((
+                                    Node {
+                                        width: Val::Percent(0.0),
+                                        height: Val::Percent(100.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(AMBER),
+                                    HudBar {
+                                        kind: HudBarKind::Flow,
+                                        displayed: 0.0,
+                                    },
+                                ));
+                            });
+                            row.spawn((
+                                hud_text(&font, "FLOW   0% // Base", 11.0, AMBER),
+                                FlowMeterUi,
+                            ));
+                        });
+                });
+                bottom.spawn(card(AMBER)).with_children(|weapon| {
+                    weapon.spawn((hud_text(&font, "MELEE", 11.0, MUTED), FireModeUi));
+                    weapon.spawn((hud_text(&title, "CYBER-KATANA", 26.0, TEXT), WeaponNameUi));
+                    weapon
+                        .spawn(Node {
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(6.0),
+                            margin: UiRect::top(Val::Px(4.0)),
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            for index in 0..3 {
+                                row.spawn((
+                                    Node {
+                                        width: Val::Px(18.0),
+                                        height: Val::Px(4.0),
+                                        ..default()
+                                    },
+                                    BackgroundColor(BAR_TRACK),
+                                    ComboPip(index),
+                                ));
+                            }
+                            row.spawn((
+                                hud_text(&font, "3-HIT COMBO", 12.0, AMBER),
+                                AmmoCounterUi,
+                                Node {
+                                    margin: UiRect::left(Val::Px(6.0)),
+                                    ..default()
+                                },
+                            ));
+                        });
+                });
             });
         });
 }
@@ -424,14 +650,20 @@ type PlayerVitals<'a> = (
     Option<&'a FlowState>,
 );
 
-/// Updates the vitals readout, flow meter and bars from the player.
+/// Updates the vitals readout, flow meter and bars from the player. Fills
+/// ease quickly; damage trails linger behind them, and health turns red
+/// when low.
+#[allow(clippy::type_complexity)]
 pub fn update_hud_vitals(
     time: Res<Time>,
     constants: Option<Res<ParkourPhysicsConstants>>,
     players: Query<PlayerVitals, With<PlayerCharacterMarker>>,
-    mut vitals_text: Query<&mut Text, With<HealthShieldBarUi>>,
-    mut flow_text: Query<&mut Text, (With<FlowMeterUi>, Without<HealthShieldBarUi>)>,
-    mut bars: Query<(&mut HudBar, &mut Node)>,
+    mut texts: ParamSet<(
+        Query<&mut Text, With<HealthShieldBarUi>>,
+        Query<&mut Text, With<HealthValueUi>>,
+        Query<&mut Text, With<FlowMeterUi>>,
+    )>,
+    mut bars: Query<(&mut HudBar, &mut Node, &mut BackgroundColor)>,
     mut shown: Local<VitalsShown>,
 ) {
     let Some((health, shields, flow)) = players.iter().next() else {
@@ -446,8 +678,11 @@ pub fn update_hud_vitals(
         display_value(hp.1),
     ];
     if shown.numbers != Some(numbers) {
-        for mut text in &mut vitals_text {
-            write_vitals_text(&mut text.0, sh, hp);
+        for mut text in &mut texts.p0() {
+            write_vital_value(&mut text.0, sh.0);
+        }
+        for mut text in &mut texts.p1() {
+            write_vital_value(&mut text.0, hp.0);
         }
         shown.numbers = Some(numbers);
     }
@@ -459,27 +694,49 @@ pub fn update_hud_vitals(
         FlowTier::from_flow(flow_value),
     );
     if shown.flow != Some(flow_key) {
-        for mut text in &mut flow_text {
+        for mut text in &mut texts.p2() {
             write_flow_text(&mut text.0, flow_value, overdrive);
         }
         shown.flow = Some(flow_key);
     }
 
-    let t = ease_factor(BAR_EASE_RATE, time.delta_secs());
-    for (mut bar, mut node) in &mut bars {
-        let target = match bar.kind {
-            HudBarKind::Shield => fill_fraction(sh.0, sh.1),
-            HudBarKind::Health => fill_fraction(hp.0, hp.1),
-            HudBarKind::Stamina => {
-                flow.map_or(0.0, |f| fill_fraction(f.stamina_current, f.stamina_max))
-            }
-            HudBarKind::Flow => fill_fraction(flow_value, FLOW_MAX),
+    let dt = time.delta_secs();
+    let fast = ease_factor(BAR_EASE_RATE, dt);
+    let slow = ease_factor(TRAIL_EASE_RATE, dt);
+    let health_fraction = fill_fraction(hp.0, hp.1);
+    for (mut bar, mut node, mut color) in &mut bars {
+        let (target, trail) = match bar.kind {
+            HudBarKind::Shield => (fill_fraction(sh.0, sh.1), false),
+            HudBarKind::Health => (health_fraction, false),
+            HudBarKind::ShieldTrail => (fill_fraction(sh.0, sh.1), true),
+            HudBarKind::HealthTrail => (health_fraction, true),
+            HudBarKind::Stamina => (
+                flow.map_or(0.0, |f| fill_fraction(f.stamina_current, f.stamina_max)),
+                false,
+            ),
+            HudBarKind::Flow => (fill_fraction(flow_value, FLOW_MAX), false),
         };
-        let next = bar.displayed + (target - bar.displayed) * t;
-        let next = if (next - target).abs() < 1e-4 {
+        if bar.kind == HudBarKind::Health {
+            let wanted = if health_fraction < LOW_HEALTH_FRACTION {
+                DANGER
+            } else {
+                HEALTH_OK
+            };
+            if color.0 != wanted {
+                color.0 = wanted;
+            }
+        }
+        // Trails only lag on the way down; healing snaps them up.
+        let next = if trail && target > bar.displayed {
             target
         } else {
-            next
+            let rate = if trail { slow } else { fast };
+            let next = bar.displayed + (target - bar.displayed) * rate;
+            if (next - target).abs() < 1e-4 {
+                target
+            } else {
+                next
+            }
         };
         if next != bar.displayed {
             bar.displayed = next;
@@ -488,9 +745,15 @@ pub fn update_hud_vitals(
     }
 }
 
+/// Weapon card: name, fire mode and ammunition (or the melee combo).
+#[allow(clippy::type_complexity)]
 pub fn update_ammo_counter(
     weapons: Query<Option<&BallisticProfile>, With<PlayerCharacterMarker>>,
-    mut texts: Query<&mut Text, With<AmmoCounterUi>>,
+    mut texts: ParamSet<(
+        Query<&mut Text, With<AmmoCounterUi>>,
+        Query<&mut Text, With<WeaponNameUi>>,
+        Query<&mut Text, With<FireModeUi>>,
+    )>,
     mut shown: Local<Option<(u32, u32, bool, Option<RangedWeaponArchetype>)>>,
 ) {
     let Some(weapon) = weapons.iter().next() else {
@@ -507,18 +770,49 @@ pub fn update_ammo_counter(
     if *shown == Some(key) {
         return;
     }
-    for mut text in &mut texts {
+    for mut text in &mut texts.p0() {
         write_ammo_text(&mut text.0, weapon);
+    }
+    for mut text in &mut texts.p1() {
+        weapon_display_name(weapon).clone_into(&mut text.0);
+    }
+    for mut text in &mut texts.p2() {
+        weapon
+            .map_or("MELEE", |w| fire_mode_label(w.archetype))
+            .clone_into(&mut text.0);
     }
     *shown = Some(key);
 }
 
-/// Heading from the player's view (or body) yaw, plus the objective range.
+/// Lights one pip per hit of the running melee combo.
+pub fn update_combo_pips(
+    fighters: Query<&MeleeCombatState, With<PlayerCharacterMarker>>,
+    mut pips: Query<(&ComboPip, &mut BackgroundColor)>,
+) {
+    let lit = fighters
+        .iter()
+        .next()
+        .and_then(|m| (m.attack_phase != AttackPhase::Idle).then_some(m.current_combo_index % 3));
+    for (pip, mut color) in &mut pips {
+        let wanted = match lit {
+            Some(step) if pip.0 <= step => AMBER,
+            _ => BAR_TRACK,
+        };
+        if color.0 != wanted {
+            color.0 = wanted;
+        }
+    }
+}
+
+/// Heading, objective range and the scrolling compass tape.
 pub fn update_compass_strip(
     objective: Option<Res<HudObjective>>,
     players: Query<(&Transform, Option<&ViewAngles>), With<PlayerCharacterMarker>>,
-    mut texts: Query<&mut Text, With<CompassStripUi>>,
-    mut shown: Local<Option<(u32, Option<u32>, usize)>>,
+    mut texts: ParamSet<(
+        Query<&mut Text, With<CompassStripUi>>,
+        Query<&mut Text, With<CompassTapeUi>>,
+    )>,
+    mut shown: Local<Option<(u32, Option<u32>, String)>>,
 ) {
     let Some((transform, view)) = players.iter().next() else {
         return;
@@ -528,16 +822,22 @@ pub fn update_compass_strip(
         o.target
             .map(|t| (o.label.as_str(), t.distance(transform.translation)))
     });
+    let heading = compass_heading_degrees(yaw);
     let key = (
-        compass_heading_degrees(yaw),
+        heading,
         target.map(|(_, d)| d.round() as u32),
-        objective.as_deref().map_or(0, |o| o.label.len()),
+        objective
+            .as_deref()
+            .map_or_else(String::new, |o| o.label.clone()),
     );
-    if *shown == Some(key) {
+    if shown.as_ref() == Some(&key) {
         return;
     }
-    for mut text in &mut texts {
+    for mut text in &mut texts.p0() {
         write_compass_text(&mut text.0, yaw, target);
+    }
+    for mut text in &mut texts.p1() {
+        write_compass_tape(&mut text.0, heading);
     }
     *shown = Some(key);
 }
@@ -689,13 +989,12 @@ mod tests {
     #[test]
     fn vitals_and_flow_text() {
         let mut out = String::new();
-        write_vitals_text(&mut out, (150.0, 150.0), (99.2, 100.0));
-        assert_eq!(
-            out, "SHIELDS 150 / 150  |  HP 100 / 100",
-            "a sliver rounds up"
-        );
-        write_vitals_text(&mut out, (0.0, 100.0), (0.0, 100.0));
-        assert_eq!(out, "SHIELDS 0 / 100  |  HP 0 / 100");
+        write_vital_value(&mut out, 99.2);
+        assert_eq!(out, "100", "a sliver rounds up");
+        write_vital_value(&mut out, 0.0);
+        assert_eq!(out, "0");
+        write_vital_value(&mut out, f32::NAN);
+        assert_eq!(out, "0");
         let labels: Vec<String> = [0.0, 30.0, 60.0, 90.0]
             .into_iter()
             .map(|flow| {
@@ -719,7 +1018,7 @@ mod tests {
         let mut out = String::with_capacity(64);
         let ptr = out.as_ptr();
         for i in 0..100 {
-            write_vitals_text(&mut out, (i as f32, 150.0), (100.0, 100.0));
+            write_vital_value(&mut out, i as f32);
         }
         assert_eq!(out.as_ptr(), ptr, "no reallocation while values change");
     }
@@ -728,19 +1027,34 @@ mod tests {
     fn ammo_text() {
         let mut out = String::new();
         write_ammo_text(&mut out, None);
-        assert_eq!(out, "-- // -- [MELEE]");
+        assert_eq!(out, "3-HIT COMBO");
+        assert_eq!(weapon_display_name(None), "CYBER-KATANA");
         let mut smg = BallisticProfile::for_archetype(RangedWeaponArchetype::SmartSubmachineGun);
         smg.current_ammo = 30;
         smg.reserve_ammo = 120;
         write_ammo_text(&mut out, Some(&smg));
-        assert_eq!(out, "30 // 120 [AUTO]");
+        assert_eq!(out, "30 / 120");
+        assert_eq!(weapon_display_name(Some(&smg)), "SMART SMG");
         smg.reload_timer = 1.2;
         write_ammo_text(&mut out, Some(&smg));
-        assert_eq!(out, "RELOADING // 120 [AUTO]");
+        assert_eq!(out, "RELOADING");
         assert_eq!(
             fire_mode_label(RangedWeaponArchetype::ChargeRailgun),
             "CHARGE"
         );
+    }
+
+    #[test]
+    fn compass_tape_centres_on_the_heading() {
+        let mut out = String::new();
+        write_compass_tape(&mut out, 0);
+        assert_eq!(out.chars().count(), COMPASS_TAPE_CHARS);
+        let centre = COMPASS_TAPE_CHARS / 2;
+        assert_eq!(out.chars().nth(centre), Some('N'));
+        assert!(out.contains("NE") && out.contains("NW"));
+        write_compass_tape(&mut out, 92);
+        assert_eq!(out.chars().nth(centre), Some('E'), "snaps to 5 degrees");
+        assert!(!out.contains('W'));
     }
 
     #[test]

@@ -16,7 +16,7 @@ use game_core::identifiers::{NetworkEntityId, PlayerCharacterMarker, PlayerId};
 use game_core::input::PlayerInputState;
 use game_core::protocol::{
     ClientMessage, EntityStateSnapshot, PlayerInputPacket, ServerMessage, ServerStateSnapshot,
-    PROTOCOL_VERSION,
+    PROTOCOL_VERSION, RESPAWN_CHECKPOINTS,
 };
 use game_core::time::{NetworkTick, FIXED_TIMESTEP_SECS, NETWORK_TICK_RATE_HZ};
 use game_core::CurrentNetworkTick;
@@ -222,7 +222,7 @@ pub fn process_incoming_packets(
                         Replicated {
                             id: network_entity_id,
                         },
-                        NetworkMovement,
+                        NetworkMovement::default(),
                         Transform::from_translation(state.spawn_point),
                         KinematicVelocity::default(),
                         PlayerInputState::default(),
@@ -282,6 +282,18 @@ pub fn process_incoming_packets(
                 transport.send(connection, ServerMessage::Pong(timestamp));
             }
             ClientMessage::Interact(_) => {}
+            ClientMessage::Respawn(index) => {
+                let Some(&point) = RESPAWN_CHECKPOINTS.get(usize::from(index)) else {
+                    continue;
+                };
+                if let Some(client) = state.client_by_connection(connection) {
+                    commands.entity(client.entity).insert((
+                        Transform::from_translation(point),
+                        KinematicVelocity::default(),
+                        NetworkMovement::default(),
+                    ));
+                }
+            }
         }
     }
 }
@@ -293,12 +305,12 @@ pub fn apply_client_inputs(
         &mut Transform,
         &mut KinematicVelocity,
         Option<&mut PlayerInputState>,
-        Has<NetworkMovement>,
+        Option<&mut NetworkMovement>,
     )>,
 ) {
     let max_steps = state.max_input_steps_per_tick;
     for client in state.clients.values_mut() {
-        let Ok((mut transform, mut velocity, mut input_state, moved_here)) =
+        let Ok((mut transform, mut velocity, mut input_state, mut movement)) =
             characters.get_mut(client.entity)
         else {
             continue;
@@ -307,8 +319,13 @@ pub fn apply_client_inputs(
             let Some(packet) = client.next_input() else {
                 break;
             };
-            if moved_here {
-                simulate_movement_step(&packet, &mut transform.translation, &mut velocity.0);
+            if let Some(movement) = movement.as_mut() {
+                simulate_movement_step(
+                    &packet,
+                    &mut transform.translation,
+                    &mut velocity.0,
+                    &mut movement.state,
+                );
             }
             if let Some(input_state) = input_state.as_mut() {
                 input_state.push(packet);
@@ -348,11 +365,12 @@ pub fn collect_entity_snapshots(
         &Transform,
         Option<&KinematicVelocity>,
         Option<&NetworkedPlayer>,
+        Option<&NetworkMovement>,
     )>,
 ) -> Vec<EntityStateSnapshot> {
     let mut entities: Vec<EntityStateSnapshot> = replicated
         .iter()
-        .map(|(r, transform, velocity, player)| {
+        .map(|(r, transform, velocity, player, movement)| {
             let (yaw, pitch) = player
                 .and_then(|p| state.clients.get(&p.player_id))
                 .map_or_else(
@@ -365,7 +383,7 @@ pub fn collect_entity_snapshots(
                 velocity: velocity.map_or(Vec3::ZERO, |v| v.0),
                 yaw,
                 pitch,
-                state_flags: 0,
+                state_flags: movement.map_or(0, |m| m.state.pack()),
             }
             .sanitized()
         })
@@ -383,6 +401,7 @@ pub fn broadcast_world_snapshots(
         &Transform,
         Option<&KinematicVelocity>,
         Option<&NetworkedPlayer>,
+        Option<&NetworkMovement>,
     )>,
 ) {
     if state.current_tick.0 % state.snapshot_interval_ticks() == 0 && !state.clients.is_empty() {

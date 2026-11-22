@@ -6,18 +6,25 @@
 
 pub mod hud;
 pub mod inventory_ui;
+pub mod mission_hud;
+pub mod pause_menu;
 pub mod settings_ui;
 pub mod skills_ui;
 
-pub use hud::{HudFont, HudObjective, HudRootNode};
+pub use hud::{HudFont, HudObjective, HudRootNode, HudTitleFont};
 pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
+pub use mission_hud::{ActiveSubtitle, Banner, BannerTone, MissionHud};
+pub use pause_menu::{
+    any_menu_open, ControlsBadgeState, GameplayHold, PauseButton, PauseMenuState, PausePage,
+    CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
+};
 pub use settings_ui::{SettingsModalState, SettingsTab, UserSettingsConfig, UserSettingsPath};
 pub use skills_ui::{SkillRow, SkillsModalState, SkillsSummary};
 
 use bevy::prelude::*;
 use bevy_egui::EguiContext;
 use game_combat::{MeleeHitEvent, RangedHitEvent};
-use game_input::{LocalPlayerInput, PlayerAction};
+use game_input::{GameplayInputGate, LocalPlayerInput, PlayerAction};
 use leafwing_input_manager::prelude::ActionState;
 
 /// Panel toggle requests for one frame.
@@ -28,29 +35,42 @@ pub struct UiToggleInput {
     pub escape: bool,
 }
 
-/// K and Tab toggle their panels. Escape backs out: it closes the skills
-/// or inventory panel if one is open, and otherwise toggles settings.
-pub fn apply_ui_toggles(
-    input: UiToggleInput,
-    skills: &mut SkillsModalState,
-    inventory: &mut InventoryModalState,
-    settings: &mut SettingsModalState,
-) {
-    if input.skills {
-        skills.toggle();
-    }
-    if input.inventory {
-        inventory.toggle();
-    }
-    if input.escape {
-        if skills.is_open || inventory.is_open {
-            skills.is_open = false;
-            if inventory.is_open {
-                inventory.toggle();
-            }
-        } else {
-            settings.toggle();
+/// Every menu Escape and the panel keys act on.
+pub struct UiMenus<'a> {
+    pub pause: &'a mut PauseMenuState,
+    pub skills: &'a mut SkillsModalState,
+    pub inventory: &'a mut InventoryModalState,
+    pub settings: &'a mut SettingsModalState,
+}
+
+/// K and Tab toggle their panels (not while paused). Escape backs out one
+/// level at a time: skills or inventory, then settings, then the controls
+/// page; with nothing else open it toggles the pause menu.
+pub fn apply_ui_toggles(input: UiToggleInput, menus: UiMenus) {
+    if !menus.pause.is_open {
+        if input.skills {
+            menus.skills.toggle();
         }
+        if input.inventory {
+            menus.inventory.toggle();
+        }
+    }
+    if !input.escape {
+        return;
+    }
+    if menus.skills.is_open || menus.inventory.is_open {
+        menus.skills.is_open = false;
+        if menus.inventory.is_open {
+            menus.inventory.toggle();
+        }
+    } else if menus.settings.is_open {
+        menus.settings.is_open = false;
+    } else if menus.pause.is_open && menus.pause.page != PausePage::Main {
+        menus.pause.page = PausePage::Main;
+    } else if menus.pause.is_open {
+        menus.pause.close();
+    } else {
+        menus.pause.open();
     }
 }
 
@@ -59,6 +79,7 @@ pub fn apply_ui_toggles(
 pub fn handle_ui_keyboard_toggles(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     actions: Query<&ActionState<PlayerAction>, With<LocalPlayerInput>>,
+    mut pause: ResMut<PauseMenuState>,
     mut skills: ResMut<SkillsModalState>,
     mut inventory: ResMut<InventoryModalState>,
     mut settings: ResMut<SettingsModalState>,
@@ -77,7 +98,15 @@ pub fn handle_ui_keyboard_toggles(
         },
     };
     if input != UiToggleInput::default() {
-        apply_ui_toggles(input, &mut skills, &mut inventory, &mut settings);
+        apply_ui_toggles(
+            input,
+            UiMenus {
+                pause: &mut pause,
+                skills: &mut skills,
+                inventory: &mut inventory,
+                settings: &mut settings,
+            },
+        );
     }
 }
 
@@ -92,11 +121,24 @@ impl Plugin for UiPlugin {
             .init_resource::<UserSettingsConfig>()
             .init_resource::<UserSettingsPath>()
             .init_resource::<HudObjective>()
+            .init_resource::<PauseMenuState>()
+            .init_resource::<MissionHud>()
+            .init_resource::<ActiveSubtitle>()
+            .init_resource::<GameplayHold>()
+            .add_event::<game_audio::SubtitleDisplayEvent>()
+            .init_resource::<ControlsBadgeState>()
+            .init_resource::<GameplayInputGate>()
             .add_event::<RangedHitEvent>()
             .add_event::<MeleeHitEvent>()
+            .add_event::<game_audio::PlaySfxEvent>()
             .add_systems(
                 Startup,
-                (hud::setup_cyberpunk_hud, settings_ui::load_user_settings),
+                (
+                    hud::setup_cyberpunk_hud,
+                    pause_menu::setup_pause_menu,
+                    mission_hud::setup_mission_hud,
+                    settings_ui::load_user_settings,
+                ),
             )
             .add_systems(
                 Update,
@@ -104,15 +146,26 @@ impl Plugin for UiPlugin {
                     inventory_ui::sync_inventory_grids,
                     hud::update_hud_vitals,
                     hud::update_ammo_counter,
+                    hud::update_combo_pips,
                     hud::update_compass_strip,
                     hud::update_crosshair_bloom,
                     hud::update_hit_markers,
+                    (
+                        mission_hud::track_subtitles,
+                        mission_hud::render_mission_hud,
+                    )
+                        .chain(),
                     (
                         handle_ui_keyboard_toggles,
                         skills_ui::render_skills_modal_egui.run_if(has_egui),
                         inventory_ui::render_inventory_egui.run_if(has_egui),
                         settings_ui::render_settings_menu_egui.run_if(has_egui),
                         settings_ui::apply_user_settings,
+                        pause_menu::handle_pause_buttons,
+                        pause_menu::toggle_controls_badge,
+                        pause_menu::sync_pause_menu_visibility,
+                        pause_menu::sync_gameplay_focus,
+                        pause_menu::pause_simulation_time,
                     )
                         .chain(),
                 ),
@@ -131,8 +184,8 @@ mod tests {
     use game_parkour::{FlowState, KinematicVelocity};
     use game_rpg::{Health, Shields};
     use hud::{
-        AmmoCounterUi, CompassStripUi, CrosshairUi, FlowMeterUi, HealthShieldBarUi, HitMarkerUi,
-        HudBar, HudBarKind,
+        AmmoCounterUi, CompassStripUi, CrosshairUi, FireModeUi, FlowMeterUi, HealthShieldBarUi,
+        HealthValueUi, HitMarkerUi, HudBar, HudBarKind, WeaponNameUi,
     };
     use std::f32::consts::FRAC_PI_2;
     use std::time::Duration;
@@ -194,9 +247,13 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         assert_eq!(world.query::<&HudRootNode>().iter(world).count(), 1);
-        assert_eq!(world.query::<&HudBar>().iter(world).count(), 4);
+        assert_eq!(
+            world.query::<&HudBar>().iter(world).count(),
+            5,
+            "shield, health, their trails and flow"
+        );
         assert_eq!(world.query::<&hud::CrosshairArm>().iter(world).count(), 4);
-        assert_eq!(text::<AmmoCounterUi>(&mut app), "-- // -- [MELEE]");
+        assert_eq!(text::<AmmoCounterUi>(&mut app), "3-HIT COMBO");
     }
 
     #[test]
@@ -211,10 +268,14 @@ mod tests {
         let shield_max = Shields::default().max as u32;
         assert_eq!(
             text::<HealthShieldBarUi>(&mut app),
-            format!("SHIELDS 30 / {shield_max}  |  HP 65 / 100")
+            "30",
+            "shield max {shield_max}"
         );
+        assert_eq!(text::<HealthValueUi>(&mut app), "65");
         assert_eq!(text::<FlowMeterUi>(&mut app), "FLOW  80% // Overdrive 125%");
-        assert_eq!(text::<AmmoCounterUi>(&mut app), "24 // 90 [AUTO]");
+        assert_eq!(text::<AmmoCounterUi>(&mut app), "24 / 90");
+        assert_eq!(text::<FireModeUi>(&mut app), "AUTO");
+        assert_eq!(text::<WeaponNameUi>(&mut app), "PULSE RIFLE");
         assert_eq!(
             text::<CompassStripUi>(&mut app),
             "W 270\u{b0} // OBJECTIVE: CLINIC EXIT [120m]"
@@ -311,33 +372,92 @@ mod tests {
             "escape backs out first"
         );
         assert!(!app.world().resource::<InventoryModalState>().is_open);
-        assert!(!app.world().resource::<SettingsModalState>().is_open);
+        assert!(!app.world().resource::<PauseMenuState>().is_open);
         tap(&mut app, KeyCode::Escape);
-        assert!(app.world().resource::<SettingsModalState>().is_open);
+        assert!(app.world().resource::<PauseMenuState>().is_open);
+        assert!(app.world().resource::<GameplayInputGate>().blocked);
+        tap(&mut app, KeyCode::KeyK);
+        assert!(
+            !app.world().resource::<SkillsModalState>().is_open,
+            "panels stay shut while paused"
+        );
         tap(&mut app, KeyCode::Escape);
-        assert!(!app.world().resource::<SettingsModalState>().is_open);
+        assert!(!app.world().resource::<PauseMenuState>().is_open);
+        assert!(!app.world().resource::<GameplayInputGate>().blocked);
     }
 
     #[test]
     fn toggle_rules() {
+        let mut p = PauseMenuState::default();
         let (mut s, mut i, mut c) = (
             SkillsModalState::default(),
             InventoryModalState::default(),
             SettingsModalState::default(),
         );
-        let press = |skills, inventory, escape| UiToggleInput {
-            skills,
-            inventory,
-            escape,
+        let mut press = |skills, inventory, escape| {
+            apply_ui_toggles(
+                UiToggleInput {
+                    skills,
+                    inventory,
+                    escape,
+                },
+                UiMenus {
+                    pause: &mut p,
+                    skills: &mut s,
+                    inventory: &mut i,
+                    settings: &mut c,
+                },
+            );
+            (p, s.is_open, i.is_open, c.is_open)
         };
-        apply_ui_toggles(press(true, false, false), &mut s, &mut i, &mut c);
-        assert!(s.is_open);
-        apply_ui_toggles(press(true, false, false), &mut s, &mut i, &mut c);
-        assert!(!s.is_open);
-        apply_ui_toggles(press(false, false, true), &mut s, &mut i, &mut c);
-        assert!(c.is_open);
-        apply_ui_toggles(press(false, true, false), &mut s, &mut i, &mut c);
-        assert!(i.is_open && c.is_open);
+        assert!(press(true, false, false).1);
+        assert!(!press(true, false, false).1);
+        let (pause, ..) = press(false, false, true);
+        assert!(pause.is_open, "escape with nothing open pauses");
+        assert!(!press(false, true, false).2, "no inventory while paused");
+        let (pause, ..) = press(false, false, true);
+        assert!(!pause.is_open);
+    }
+
+    #[test]
+    fn escape_backs_out_of_settings_and_controls() {
+        let mut p = PauseMenuState::default();
+        let (mut s, mut i, mut c) = (
+            SkillsModalState::default(),
+            InventoryModalState::default(),
+            SettingsModalState::default(),
+        );
+        p.open();
+        p.page = PausePage::Controls;
+        c.is_open = true;
+        let escape = UiToggleInput {
+            escape: true,
+            ..default()
+        };
+        let mut step = || {
+            apply_ui_toggles(
+                escape,
+                UiMenus {
+                    pause: &mut p,
+                    skills: &mut s,
+                    inventory: &mut i,
+                    settings: &mut c,
+                },
+            );
+            (p, c.is_open)
+        };
+        assert_eq!(
+            step(),
+            (
+                PauseMenuState {
+                    is_open: true,
+                    page: PausePage::Controls
+                },
+                false
+            )
+        );
+        assert_eq!(step().0.page, PausePage::Main);
+        assert!(!step().0.is_open);
     }
 
     #[test]

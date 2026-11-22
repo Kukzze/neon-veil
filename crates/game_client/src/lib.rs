@@ -4,6 +4,10 @@
 
 pub mod app;
 pub mod client_network;
+pub mod combat_fx;
+pub mod enemy_visuals;
+pub mod gameplay_audio;
+pub mod mission;
 pub mod transport;
 pub mod visuals;
 
