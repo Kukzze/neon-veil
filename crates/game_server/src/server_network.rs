@@ -72,6 +72,8 @@ pub struct ConnectedClient {
     pub last_input: PlayerInputPacket,
     /// Profile the player sent, replayed to players who join later.
     pub profile: Option<Vec<u8>>,
+    /// Spawn slot, so players start and respawn side by side.
+    pub slot: usize,
 }
 
 impl ConnectedClient {
@@ -216,6 +218,10 @@ pub fn process_incoming_packets(
                     player_id = PlayerId::new_random();
                 }
                 let network_entity_id = player_network_id(player_id);
+                // Lowest slot nobody is using.
+                let slot = (0..)
+                    .find(|s| !state.clients.values().any(|c| c.slot == *s))
+                    .unwrap_or(0);
                 let entity = commands
                     .spawn((
                         Name::new("Networked Player"),
@@ -225,7 +231,7 @@ pub fn process_incoming_packets(
                             id: network_entity_id,
                         },
                         NetworkMovement::default(),
-                        Transform::from_translation(state.spawn_point),
+                        Transform::from_translation(state.spawn_point + spawn_slot_offset(slot)),
                         KinematicVelocity::default(),
                         PlayerInputState::default(),
                     ))
@@ -243,6 +249,7 @@ pub fn process_incoming_packets(
                         pending_inputs: BTreeMap::new(),
                         last_input: PlayerInputPacket::default(),
                         profile: None,
+                        slot,
                     },
                 );
                 // Show the newcomer everyone already here.
@@ -327,7 +334,7 @@ pub fn process_incoming_packets(
                 };
                 if let Some(client) = state.client_by_connection(connection) {
                     commands.entity(client.entity).insert((
-                        Transform::from_translation(point),
+                        Transform::from_translation(point + spawn_slot_offset(client.slot)),
                         KinematicVelocity::default(),
                         NetworkMovement::default(),
                     ));
@@ -335,6 +342,15 @@ pub fn process_incoming_packets(
             }
         }
     }
+}
+
+/// Sideways offset for a spawn slot: 0 in the middle, then alternating
+/// right and left 1.6 m apart, so co-op players never spawn inside each
+/// other.
+pub fn spawn_slot_offset(slot: usize) -> Vec3 {
+    let step = slot.div_ceil(2) as f32 * 1.6;
+    let side = if slot % 2 == 1 { 1.0 } else { -1.0 };
+    Vec3::X * step * side
 }
 
 /// Applies buffered inputs to each client's character.
@@ -476,5 +492,16 @@ pub fn handle_disconnections(
             }
             disconnected.send(ClientDisconnectedEvent { player_id });
         }
+    }
+}
+
+#[cfg(test)]
+mod spawn_slot_tests {
+    use super::spawn_slot_offset;
+
+    #[test]
+    fn slots_spread_side_by_side() {
+        let xs: Vec<f32> = (0..4).map(|s| spawn_slot_offset(s).x).collect();
+        assert_eq!(xs, vec![0.0, 1.6, -1.6, 3.2]);
     }
 }
