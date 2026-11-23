@@ -18,8 +18,9 @@ jobs:
     name: Format & clippy
     runs-on: ubuntu-latest
     env:
-      # Same portable CPU target as the test job (see below).
-      RUSTFLAGS: "-C target-cpu=x86-64-v2"
+      # Same portable CPU target as the test job (see below). RUSTFLAGS
+      # replaces the config rustflags, so the lint flags are repeated here.
+      RUSTFLAGS: "-C target-cpu=x86-64-v2 -W rust_2021_compatibility -W clippy::all -D clippy::correctness -A clippy::type_complexity"
     steps:
       - uses: actions/checkout@v4
 
