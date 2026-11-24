@@ -271,7 +271,6 @@ pub fn generate_district_layout(seed: u64) -> DistrictLayout {
 /// Shared meshes and materials for the district.
 struct Palette {
     cube: Handle<Mesh>,
-    sphere: Handle<Mesh>,
     concrete: [Handle<StandardMaterial>; 3],
     asphalt: Handle<StandardMaterial>,
     puddle: Handle<StandardMaterial>,
@@ -287,7 +286,6 @@ struct Palette {
     /// Painted sheet metal: AC units, tanks.
     sheet_metal: Handle<StandardMaterial>,
     lamp_head: Handle<StandardMaterial>,
-    skyline: Handle<StandardMaterial>,
     beacon: Handle<StandardMaterial>,
     /// Materials with photo textures, and their tile size in metres.
     tiled: Vec<(AssetId<StandardMaterial>, f32)>,
@@ -377,7 +375,6 @@ impl Palette {
         let puddle = surface(0.012, 0.014, 0.02, 0.04, 0.0);
         let sidewalk = sidewalk_tex.unwrap_or_else(|| surface(0.07, 0.075, 0.085, 0.45, 0.0));
         let lamp_pole = surface(0.05, 0.05, 0.055, 0.4, 0.8);
-        let skyline = surface(0.015, 0.018, 0.026, 0.9, 0.0);
         let trim = surface(0.055, 0.056, 0.06, 0.75, 0.0);
         let sheet_metal = surface(0.14, 0.15, 0.15, 0.45, 0.6);
         let mut glow = |color: LinearRgba| {
@@ -389,7 +386,6 @@ impl Palette {
         };
         Self {
             cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            sphere: meshes.add(Sphere::new(0.5).mesh().ico(2).expect("valid icosphere")),
             concrete,
             asphalt,
             puddle,
@@ -403,7 +399,6 @@ impl Palette {
             trim,
             sheet_metal,
             lamp_head: glow(LinearRgba::rgb(3.5, 3.0, 2.4)),
-            skyline,
             beacon: glow(LinearRgba::rgb(12.0, 0.3, 0.2)),
             tiled,
             images,
@@ -631,8 +626,13 @@ pub fn spawn_neon_district(
         &mut meshes,
         &palette,
         palette.asphalt.clone(),
-        Vec3::new(0.0, -0.5, -120.0),
-        Vec3::new(1400.0, 1.0, 1400.0),
+        // The whole 10 km city stands on this.
+        Vec3::new(0.0, -0.5, 0.0),
+        Vec3::new(
+            crate::city::MAP_HALF * 2.0 + 200.0,
+            1.0,
+            crate::city::MAP_HALF * 2.0 + 200.0,
+        ),
         true,
     );
     for side in [-1.0f32, 1.0] {
@@ -850,27 +850,6 @@ pub fn spawn_neon_district(
             Vec3::new((end - start).length(), 0.08, 0.25),
             false,
         );
-    }
-
-    for tower in &layout.skyline {
-        block(
-            &mut commands,
-            &mut meshes,
-            &palette,
-            palette.skyline.clone(),
-            tower.base_center + Vec3::Y * tower.size.y * 0.5,
-            tower.size,
-            false,
-        );
-        if tower.beacon {
-            commands.spawn((
-                NeonDistrictPiece,
-                Mesh3d(palette.sphere.clone()),
-                MeshMaterial3d(palette.beacon.clone()),
-                Transform::from_translation(tower.base_center + Vec3::Y * (tower.size.y + 1.0))
-                    .with_scale(Vec3::splat(2.2)),
-            ));
-        }
     }
 }
 

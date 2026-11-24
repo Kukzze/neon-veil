@@ -2,6 +2,8 @@
 //! procedural traversal props and the greybox gym.
 
 pub mod chunk_loader;
+pub mod city;
+pub mod city_render;
 pub mod district_manifest;
 pub mod greybox_gym;
 pub mod lod_system;
@@ -14,6 +16,7 @@ pub use chunk_loader::{
     ChunkAssetManifest, ChunkCoordinate, ChunkState, WorldChunk, WorldChunkStreamer,
     CACHE_DISTANCE_CHUNKS, CHUNK_SIZE_METERS, RENDER_DISTANCE_CHUNKS, SIMULATION_DISTANCE_CHUNKS,
 };
+pub use city_render::CityPlugin;
 pub use district_manifest::{get_district_at_position, DistrictId, DistrictZone, DISTRICT_CATALOG};
 pub use greybox_gym::GreyboxGymPlugin;
 pub use lod_system::{LODComponent, LODLevel, LODQuality, LODSettings};
