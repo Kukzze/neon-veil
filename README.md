@@ -3,8 +3,8 @@
 # NEON VEIL: ZERO PROTOCOL
 
 **A rain-soaked cyberpunk action game about speed, steel and memory.**
-Parkour across Kuroshio Avenue, cut through Syndicate patrols with a cyber-katana,
-and bring down the Gorgon. Solo or in co-op.
+Parkour across a 10 km city, cut through Syndicate patrols with blades of fire,
+frost and void, grow a 4,000-node passive tree, and bring down the Gorgon. Solo or in co-op.
 
 [![CI](https://github.com/Kukzze/neon-veil/actions/workflows/ci.yml/badge.svg)](https://github.com/Kukzze/neon-veil/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Kukzze/neon-veil?color=00e5ff)](https://github.com/Kukzze/neon-veil/releases/latest)
@@ -65,12 +65,17 @@ long legs.
 
 ### Move like water
 
+- **A 10 km x 10 km city** streamed around you: downtown towers, low rooftops, alleys and street clutter, ringed by a barrier you cannot leave.
+- **Real parkour**: walls stop you, kerbs and ledges are stepped onto, sprint-vault crates, grab and mantle ledges, wall-run along towers and wall-jump off them, run across rooftops.
 - **Responsive movement**: instant walk and sprint, jumps with coyote time and a jump buffer, and **momentum slides** that carry your speed.
 - **Deterministic client prediction** against an authoritative server; the same movement code runs on both, so what you press is what happens.
 - A **procedurally animated body**: stride-matched running, sprint lean, jump tuck, slides and natural secondary motion, all adapted to your build.
 
 ### Fight with a blade
 
+- **The Arsenal**: **500 weapons** in ten classes (katanas, dual blades, batons, gauntlets, mono-whips, claymores, spears, scythes, axes, hammers) from ten makers, and **2,900 weapon mods** in ten tiers. Weapons drop from the Syndicate in four rarities with up to six mods; compare, equip and salvage them in the Armory.
+- **Six elements**: physical, fire (ignite), frost (chill), shock (overload), toxin (corrode) and void (armour-piercing), with critical strikes, status chance and potency, boss and execute damage, and life, health and shields on hit and kill.
+- **The Neural Lattice**: a **4,393-node passive tree** in six sectors (Blade, Ghost, Bulwark, Aegis, Reaver, Pulse) with named notables and trade-off keystones. Kills earn experience; every level is a point to spend.
 - A **three-hit cyber-katana combo** with swing trails and hit detection, a **guard and parry** stance, and posture damage.
 - **Enemies that think**: grunts, cloaked ninjas, hunter drones, shielded heavies, netrunners, and a multi-phase boss with hazards. Every Syndicate soldier is a real, fitted human with their own face, build, hair and gear.
 
@@ -108,6 +113,7 @@ the move.
 | `C` / `Ctrl` | Crouch, slide while sprinting | `F` | Interact |
 | `Tab` | Inventory | `K` | Skills |
 | `V` | Toggle camera | `Esc` | Pause, settings, operative profile |
+| `I` | Armory (weapons) | `P` | Neural Lattice (passive tree) |
 | `F1` | Hide the controls badge | | |
 
 Gamepads are supported too.
@@ -142,7 +148,7 @@ git clone https://github.com/Kukzze/neon-veil.git
 cd neon-veil
 cargo run -p game_client --release          # play offline
 cargo run -p game_server --release          # host a co-op server
-cargo test --workspace                       # 660+ tests
+cargo test --workspace                       # 700+ tests
 ```
 
 The companion web portal lives in `web/companion` (Next.js): `npm install && npm run dev`.
