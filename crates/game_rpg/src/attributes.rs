@@ -164,6 +164,18 @@ impl CharacterAttributes {
     /// - Cyber-Melee: +1 % melee damage per level.
     /// - Ballistics: -0.4 % recoil per level.
     pub fn derive(skills: &CharacterSkills, mods: Option<&ModLoadout>) -> Self {
+        Self::derive_with(skills, mods, None)
+    }
+
+    /// Like [`Self::derive`], plus the passive tree's bonuses.
+    pub fn derive_with(
+        skills: &CharacterSkills,
+        mods: Option<&ModLoadout>,
+        passive: Option<&crate::passive_tree::PassiveBonuses>,
+    ) -> Self {
+        use crate::passive_tree::PassiveStat as P;
+        let flat = |stat| passive.map_or(0.0, |p| p.get(stat));
+        let pct = |stat| passive.map_or(1.0, |p| p.scale(stat));
         let levels = |skill| (skills.get_boosted_level(skill) as f32 - 1.0).max(0.0);
         let endurance = levels(SkillType::Endurance);
         let agility = levels(SkillType::Agility);
@@ -171,15 +183,21 @@ impl CharacterAttributes {
         let ballistics = levels(SkillType::Ballistics);
         let m = |stat: &str| mods.map_or(1.0, |l| l.aggregate_stat_multiplier(stat));
         Self {
-            max_health: (BASE_HEALTH + 5.0 * endurance) * m("max_health"),
-            max_shields: (BASE_SHIELDS + 2.0 * endurance) * m("max_shields"),
-            shield_recharge_rate: BASE_SHIELD_RECHARGE_RATE * m("shield_recharge_rate"),
-            armor_rating: 3.0 * endurance * m("armor_rating"),
+            max_health: (BASE_HEALTH + 5.0 * endurance + flat(P::MaxHealth))
+                * m("max_health")
+                * pct(P::MaxHealthPercent),
+            max_shields: (BASE_SHIELDS + 2.0 * endurance + flat(P::MaxShields))
+                * m("max_shields")
+                * pct(P::MaxShieldsPercent),
+            shield_recharge_rate: BASE_SHIELD_RECHARGE_RATE
+                * m("shield_recharge_rate")
+                * pct(P::ShieldRecharge),
+            armor_rating: (3.0 * endurance + flat(P::Armor)) * m("armor_rating"),
             armor_shred: 0.0,
-            stamina_max: (BASE_STAMINA + agility) * m("stamina_max"),
+            stamina_max: (BASE_STAMINA + agility + flat(P::Stamina)) * m("stamina_max"),
             stamina_regen: BASE_STAMINA_REGEN * (1.0 + 0.01 * agility) * m("stamina_efficiency"),
             sprint_speed_multiplier: (1.0 + 0.002 * agility) * m("sprint_speed"),
-            melee_damage_multiplier: (1.0 + 0.01 * melee) * m("melee_damage"),
+            melee_damage_multiplier: (1.0 + 0.01 * melee) * m("melee_damage") * pct(P::MeleeDamage),
             ballistics_recoil_multiplier: ((1.0 - 0.004 * ballistics) / m("recoil_reduction"))
                 .max(0.05),
         }
@@ -255,15 +273,20 @@ pub fn recompute_character_attributes(
             Option<&mut Health>,
             Option<&mut Shields>,
             Option<&mut FlowState>,
+            Option<&crate::passive_tree::PassiveBonuses>,
         ),
-        Or<(Changed<CharacterSkills>, Changed<ModLoadout>)>,
+        Or<(
+            Changed<CharacterSkills>,
+            Changed<ModLoadout>,
+            Changed<crate::passive_tree::PassiveBonuses>,
+        )>,
     >,
 ) {
-    for (skills, mods, mut attributes, health, shields, flow) in &mut characters {
+    for (skills, mods, mut attributes, health, shields, flow, passive) in &mut characters {
         let shred = attributes.armor_shred;
         *attributes = CharacterAttributes {
             armor_shred: shred,
-            ..CharacterAttributes::derive(skills, mods)
+            ..CharacterAttributes::derive_with(skills, mods, passive)
         };
         if let Some(mut health) = health {
             health.set_max(attributes.max_health);
@@ -293,14 +316,25 @@ pub fn apply_combat_damage(
     mut status_ticks: EventReader<StatusEffectTickEvent>,
     mut damage_events: EventReader<DamageEvent>,
     mut vitals: Query<VitalsQuery>,
+    scales: Query<&crate::passive_tree::MeleeDamageScale>,
     mut deaths: EventWriter<DeathEvent>,
 ) {
     let mut hits: Vec<(Entity, Option<Entity>, f32, f32)> = Vec::new();
-    hits.extend(
-        melee_hits
-            .read()
-            .map(|h| (h.target, Some(h.attacker), h.damage, 0.0)),
-    );
+    // Melee hits scale with the attacker's melee damage (skills, mods and
+    // the passive tree).
+    let melee: Vec<_> = melee_hits
+        .read()
+        .map(|h| (h.target, h.attacker, h.damage))
+        .collect();
+    for (target, attacker, damage) in melee {
+        let scale = vitals
+            .get(attacker)
+            .ok()
+            .and_then(|(_, _, attributes)| attributes.map(|a| a.melee_damage_multiplier))
+            .unwrap_or(1.0)
+            * scales.get(attacker).map_or(1.0, |s| s.0);
+        hits.push((target, Some(attacker), damage * scale, 0.0));
+    }
     hits.extend(
         ranged_hits
             .read()

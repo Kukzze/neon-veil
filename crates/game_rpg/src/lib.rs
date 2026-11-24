@@ -3,6 +3,7 @@
 pub mod attributes;
 pub mod mod_catalog;
 pub mod mod_system;
+pub mod passive_tree;
 pub mod quest_catalog;
 pub mod quest_engine;
 pub mod skills;
@@ -13,6 +14,10 @@ pub use attributes::{
 };
 pub use mod_catalog::{find_mod, find_mod_by_name, MOD_CATALOG};
 pub use mod_system::{CyberModCard, ModLoadout, ModLoadoutError, ModPolarity};
+pub use passive_tree::{
+    kill_xp, level_progress, AllocateError, Branch, MeleeDamageScale, NodeKind, PassiveBonuses,
+    PassiveNode, PassiveProgress, PassiveStat, PassiveTree,
+};
 pub use quest_catalog::{find_quest, MASTER_QUEST_CATALOG};
 pub use quest_engine::{
     PlayerQuestLog, QuestCommand, QuestCompletedEvent, QuestCompletion, QuestDefinition,
