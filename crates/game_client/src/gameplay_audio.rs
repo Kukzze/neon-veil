@@ -7,10 +7,7 @@ use bevy::prelude::*;
 use game_audio::{AudioChannelBus, PlaySfxEvent};
 use game_combat::{AttackPhase, MeleeCombatState, MeleeHitEvent};
 use game_parkour::KinematicVelocity;
-use game_server::{SPRINT_SPEED, WALK_SPEED};
 
-const WALK_STRIDE: f32 = 1.5;
-const SPRINT_STRIDE: f32 = 2.3;
 /// Downward speed above which a landing is played as hard.
 const HARD_LANDING_SPEED: f32 = 11.0;
 
@@ -56,8 +53,8 @@ pub fn step_footfalls(
     }
     if grounded && !sliding && planar > 0.5 {
         tracker.distance += planar * dt;
-        let t = ((planar - WALK_SPEED) / (SPRINT_SPEED - WALK_SPEED)).clamp(0.0, 1.0);
-        let stride = WALK_STRIDE + (SPRINT_STRIDE - WALK_STRIDE) * t;
+        // One footfall per step of the animated gait (two per cycle).
+        let stride = crate::character::pose::stride_length(planar) * 0.5;
         if tracker.distance >= stride {
             tracker.distance -= stride;
             cues.footstep = true;
@@ -182,6 +179,7 @@ pub fn emit_combat_sounds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game_server::{SPRINT_SPEED, WALK_SPEED};
 
     #[test]
     fn strides_pace_footsteps_and_sprinting_lengthens_them() {
@@ -200,8 +198,8 @@ mod tests {
             );
             walk_steps += usize::from(cues.footstep);
         }
-        // 10 s at 5.5 m/s over 1.5 m strides.
-        assert!((35..=37).contains(&walk_steps), "{walk_steps}");
+        // 10 s at 5.5 m/s over 1.84 m steps.
+        assert!((29..=30).contains(&walk_steps), "{walk_steps}");
         let mut sprint_steps = 0;
         for _ in 0..600 {
             let cues = step_footfalls(
@@ -213,7 +211,8 @@ mod tests {
             );
             sprint_steps += usize::from(cues.footstep);
         }
-        assert!((57..=60).contains(&sprint_steps), "{sprint_steps}");
+        // 10 s at 9 m/s over 2.47 m steps: faster cadence, longer steps.
+        assert!((36..=37).contains(&sprint_steps), "{sprint_steps}");
     }
 
     #[test]

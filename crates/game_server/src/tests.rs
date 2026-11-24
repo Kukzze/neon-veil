@@ -7,11 +7,25 @@ use game_core::protocol::{
     ClientMessage, InputActions, PlayerInputPacket, ServerMessage, ServerStateSnapshot,
     PROTOCOL_VERSION,
 };
-use game_core::time::{NetworkTick, FIXED_TIMESTEP_SECS};
+use game_core::time::NetworkTick;
 use game_parkour::KinematicVelocity;
 use std::time::{Duration, Instant};
 
-const SPRINT_STEP: f32 = SPRINT_SPEED * FIXED_TIMESTEP_SECS;
+/// Distance covered by `ticks` sprinting ticks from a standstill, from the
+/// shared movement step itself (it accelerates, so steps are not equal).
+fn sprint_distance(ticks: u64) -> f32 {
+    let packet = PlayerInputPacket {
+        movement_vector: Vec2::Y,
+        actions: InputActions::SPRINT,
+        ..Default::default()
+    };
+    let (mut pos, mut vel) = (Vec3::ZERO, Vec3::ZERO);
+    let mut state = crate::movement::MovementState::default();
+    for _ in 0..ticks {
+        crate::movement::simulate_movement_step(&packet, &mut pos, &mut vel, &mut state);
+    }
+    -pos.z
+}
 
 fn server_app(network: &LoopbackNetwork) -> App {
     let mut app = App::new();
@@ -167,7 +181,7 @@ fn inputs_drive_the_character_one_step_per_tick() {
     assert_eq!(state.last_processed_tick, Some(NetworkTick(10)));
     assert_eq!(state.last_received_tick, NetworkTick(10));
     let pos = position(&app, player);
-    assert!((pos.z + 10.0 * SPRINT_STEP).abs() < 1e-4, "{pos}");
+    assert!((pos.z + sprint_distance(10)).abs() < 1e-4, "{pos}");
     let last = snapshots(&mut client).pop().expect("snapshot each tick");
     assert_eq!(last.last_processed_client_tick, NetworkTick(10));
     let me = last
@@ -193,13 +207,13 @@ fn lost_input_is_filled_with_the_previous_one() {
         Some(NetworkTick(4))
     );
     assert!(
-        (position(&app, player).z + 4.0 * SPRINT_STEP).abs() < 1e-4,
+        (position(&app, player).z + sprint_distance(4)).abs() < 1e-4,
         "gap filled, not skipped"
     );
     // A late copy of tick 3 is ignored.
     client.send(sprint(3));
     app.update();
-    assert!((position(&app, player).z + 4.0 * SPRINT_STEP).abs() < 1e-4);
+    assert!((position(&app, player).z + sprint_distance(4)).abs() < 1e-4);
 }
 
 #[test]

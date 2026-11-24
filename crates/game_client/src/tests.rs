@@ -176,11 +176,20 @@ fn prediction_stays_smooth_at_150_ms_rtt() {
         session.step();
         visual.push(session.visual(0));
     }
-    // Every frame moves exactly one sprint step: input feels instant even
-    // though the server hears about it ~75 ms later.
+    // Input feels instant even though the server hears about it ~75 ms
+    // later: the body speeds up every frame, then holds one sprint step.
+    let mut last = 0.0;
     for (i, pair) in visual.windows(2).enumerate() {
         let moved = pair[1].distance(pair[0]);
-        assert!((moved - STEP).abs() < 1e-4, "frame {i}: moved {moved}");
+        assert!(
+            moved > 0.0 && moved >= last - 1e-5,
+            "frame {i}: moved {moved}"
+        );
+        assert!(moved <= STEP + 1e-4, "frame {i}: moved {moved}");
+        if i >= 16 {
+            assert!((moved - STEP).abs() < 1e-4, "frame {i}: moved {moved}");
+        }
+        last = moved;
     }
     let prediction = session.prediction(0);
     assert_eq!(

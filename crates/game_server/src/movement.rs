@@ -13,17 +13,21 @@ use game_core::protocol::{InputActions, PlayerInputPacket};
 use game_core::time::FIXED_TIMESTEP_SECS;
 
 pub const WALK_SPEED: f32 = 5.5;
-pub const SPRINT_SPEED: f32 = 13.5;
+pub const SPRINT_SPEED: f32 = 9.0;
 pub const CROUCH_SPEED: f32 = 2.8;
 /// Planar speed a slide starts at (or keeps, when already faster).
-pub const SLIDE_START_SPEED: f32 = 16.5;
+pub const SLIDE_START_SPEED: f32 = 11.5;
 /// Exponential slide friction, 1/s.
 pub const SLIDE_FRICTION: f32 = 1.4;
 /// A slide ends once it decays below this planar speed.
-pub const SLIDE_EXIT_SPEED: f32 = 6.0;
+pub const SLIDE_EXIT_SPEED: f32 = 4.5;
 /// Takeoff speed: a 1.4 m apex under [`GRAVITY`].
 pub const JUMP_SPEED: f32 = 8.2;
 pub const GRAVITY: f32 = 24.0;
+/// Ground acceleration towards the wanted speed, m/s² (walk in ~0.08 s).
+pub const GROUND_ACCELERATION: f32 = 70.0;
+/// Ground braking when slowing or turning, m/s².
+pub const GROUND_BRAKING: f32 = 95.0;
 /// Planar acceleration available in the air, m/s².
 pub const AIR_ACCELERATION: f32 = 22.0;
 /// Ticks after leaving the ground during which a jump still works.
@@ -149,7 +153,16 @@ pub fn simulate_movement_step(
             } else {
                 WALK_SPEED
             };
-            planar = Vec2::new(direction.x, direction.z) * speed;
+            let target = Vec2::new(direction.x, direction.z) * speed;
+            // Speeding up uses acceleration, slowing or turning brakes harder.
+            let rate = if target.length_squared() > planar.length_squared() + 1e-4
+                && target.dot(planar) >= 0.0
+            {
+                GROUND_ACCELERATION
+            } else {
+                GROUND_BRAKING
+            };
+            planar += (target - planar).clamp_length_max(rate * dt);
         }
     } else {
         let top = if sprint { SPRINT_SPEED } else { WALK_SPEED };
@@ -229,15 +242,26 @@ mod tests {
     }
 
     #[test]
-    fn sprint_and_walk_distances_per_tick() {
+    fn ground_speed_ramps_up_to_sprint_and_brakes_to_a_stop() {
+        let sprint = packet(Vec2::Y, 0.0, InputActions::SPRINT);
         let mut body = Body::new();
-        body.step(&packet(Vec2::Y, 0.0, InputActions::SPRINT));
-        assert!((body.pos.z + SPRINT_SPEED / 64.0).abs() < 1e-6);
-        assert_eq!(body.vel, Vec3::new(0.0, 0.0, -SPRINT_SPEED));
-        let mut body = Body::new();
-        body.step(&packet(Vec2::new(0.0, 0.5), 0.0, 0));
+        body.step(&sprint);
         assert!(
-            (body.pos.z + 0.5 * WALK_SPEED / 64.0).abs() < 1e-6,
+            (body.vel.z + GROUND_ACCELERATION / 64.0).abs() < 1e-5,
+            "accelerates instead of snapping"
+        );
+        body.run(&sprint, 12);
+        assert_eq!(
+            body.vel,
+            Vec3::new(0.0, 0.0, -SPRINT_SPEED),
+            "top speed in ~0.2 s"
+        );
+        body.run(&packet(Vec2::ZERO, 0.0, 0), 7);
+        assert_eq!(body.vel, Vec3::ZERO, "brakes to a stop in ~0.1 s");
+        let mut body = Body::new();
+        body.run(&packet(Vec2::new(0.0, 0.5), 0.0, 0), 12);
+        assert!(
+            (body.vel.z + 0.5 * WALK_SPEED).abs() < 1e-5,
             "analog stick keeps magnitude"
         );
     }
@@ -322,7 +346,7 @@ mod tests {
     #[test]
     fn sprint_slide_boosts_then_decays_and_ends() {
         let mut body = Body::new();
-        body.run(&packet(Vec2::Y, 0.0, InputActions::SPRINT), 4);
+        body.run(&packet(Vec2::Y, 0.0, InputActions::SPRINT), 16);
         let slide = packet(Vec2::Y, 0.0, InputActions::SPRINT | InputActions::SLIDE);
         body.step(&slide);
         assert!(body.state.sliding);

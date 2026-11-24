@@ -502,10 +502,27 @@ pub fn apply_visual_error_decay(
 mod tests {
     use super::*;
     use game_core::protocol::InputActions;
-    use game_core::time::FIXED_TIMESTEP_SECS;
     use game_server::SPRINT_SPEED;
 
-    const STEP: f32 = SPRINT_SPEED * FIXED_TIMESTEP_SECS;
+    /// Velocity after `ticks` sprinting ticks from a standstill.
+    fn reference_velocity(ticks: usize) -> Vec3 {
+        let (mut pos, mut vel) = (Vec3::ZERO, Vec3::ZERO);
+        let mut state = MovementState::default();
+        for _ in 0..ticks {
+            simulate_movement_step(&sprint(), &mut pos, &mut vel, &mut state);
+        }
+        vel
+    }
+
+    /// Distance the shared movement step covers sprinting from a standstill.
+    fn reference_distance(ticks: usize) -> f32 {
+        let (mut pos, mut vel) = (Vec3::ZERO, Vec3::ZERO);
+        let mut state = MovementState::default();
+        for _ in 0..ticks {
+            simulate_movement_step(&sprint(), &mut pos, &mut vel, &mut state);
+        }
+        -pos.z
+    }
 
     fn sprint() -> PlayerInputPacket {
         PlayerInputPacket {
@@ -543,8 +560,7 @@ mod tests {
         assert_eq!(prediction.current_predicted_tick, NetworkTick(11));
         let ticks: Vec<u64> = prediction.input_history.iter().map(|p| p.tick.0).collect();
         assert_eq!(ticks, (1..=10).collect::<Vec<_>>());
-        assert!((pos.z + 10.0 * STEP).abs() < 1e-5, "{pos}");
-        assert!((pos.z + 2.109_375).abs() < 1e-5, "13.5 m/s for 10 ticks");
+        assert!((pos.z + reference_distance(10)).abs() < 1e-5, "{pos}");
         assert_eq!(vel, Vec3::new(0.0, 0.0, -SPRINT_SPEED));
     }
 
@@ -582,7 +598,7 @@ mod tests {
     #[test]
     fn divergence_rolls_back_replays_and_smooths() {
         // Start so that the prediction for tick 5 is exactly (0, 0, -10).
-        let start = Vec3::new(0.0, 0.0, -10.0 + 5.0 * STEP);
+        let start = Vec3::new(0.0, 0.0, -10.0 + reference_distance(5));
         let (mut prediction, mut pos, mut vel) = predicted(start, 10);
         assert!(
             prediction
@@ -597,7 +613,12 @@ mod tests {
             &mut prediction,
             &mut pos,
             &mut vel,
-            &server_state(Vec3::new(0.0, 0.0, -9.5)),
+            &EntityStateSnapshot {
+                velocity: reference_velocity(5),
+                // The server saw the body grounded, as the prediction did.
+                state_flags: MovementState::default().pack(),
+                ..server_state(Vec3::new(0.0, 0.0, -9.5))
+            },
             NetworkTick(5),
         );
         let ReconcileOutcome::Corrected { error, replayed } = outcome else {
@@ -605,7 +626,11 @@ mod tests {
         };
         assert!((error - 0.5).abs() < 1e-4);
         assert_eq!(replayed, 5, "inputs 6..=10 replayed");
-        let expected = Vec3::new(0.0, 0.0, -9.5 - 5.0 * STEP);
+        let expected = Vec3::new(
+            0.0,
+            0.0,
+            -9.5 - (reference_distance(10) - reference_distance(5)),
+        );
         assert!(pos.distance(expected) < 1e-4, "{pos}");
         assert!(
             prediction
