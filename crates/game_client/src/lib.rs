@@ -10,6 +10,7 @@ pub mod coop;
 pub mod creator;
 pub mod enemy_visuals;
 pub mod gameplay_audio;
+pub mod lattice;
 pub mod mission;
 pub mod transport;
 pub mod tutorial;

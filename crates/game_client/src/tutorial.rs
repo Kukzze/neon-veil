@@ -162,6 +162,8 @@ impl TutorialState {
 #[serde(default)]
 pub struct Progress {
     pub tutorial_done: bool,
+    /// Experience and owned passive tree nodes.
+    pub passive: game_rpg::PassiveProgress,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -273,12 +275,10 @@ pub fn run_tutorial(
         hud.objective = prompt.into();
     }
     if state.step == Step::Done && state.pause <= 0.0 {
-        if let Err(error) = save_progress(
-            &path.0,
-            &Progress {
-                tutorial_done: true,
-            },
-        ) {
+        // Keep everything else saved (passive tree progress) as it is.
+        let mut progress = load_progress(&path.0);
+        progress.tutorial_done = true;
+        if let Err(error) = save_progress(&path.0, &progress) {
             warn!("could not save progress: {error}");
         }
         hud.banner = None;
@@ -398,6 +398,7 @@ mod tests {
             &path,
             &Progress {
                 tutorial_done: true,
+                ..default()
             },
         )
         .expect("save");

@@ -70,6 +70,7 @@ pub enum UiPanel {
     Settings,
     Pause,
     Controls,
+    Lattice,
 }
 
 /// Parses `[--connect <address>] [--greybox] [--capture <file.png>]
@@ -156,9 +157,10 @@ where
                     Some("settings") => UiPanel::Settings,
                     Some("pause") => UiPanel::Pause,
                     Some("controls") => UiPanel::Controls,
+                    Some("lattice") => UiPanel::Lattice,
                     _ => {
                         return Err(
-                            "--open-panel needs skills, inventory, settings, pause or controls"
+                            "--open-panel needs skills, inventory, settings, pause, controls or lattice"
                                 .into(),
                         )
                     }
@@ -332,6 +334,7 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
         .add_plugins((
             crate::character::CharacterPlugin,
             crate::coop::CoopPlugin,
+            crate::lattice::LatticePlugin,
             crate::creator::CreatorPlugin {
                 start,
                 face_view: options.creator_face,
@@ -381,6 +384,7 @@ fn open_ui_panel(world: &mut World, panel: UiPanel) {
         UiPanel::Inventory => world.resource_mut::<game_ui::InventoryModalState>().is_open = true,
         UiPanel::Settings => world.resource_mut::<game_ui::SettingsModalState>().is_open = true,
         UiPanel::Pause => world.resource_mut::<game_ui::PauseMenuState>().open(),
+        UiPanel::Lattice => world.resource_mut::<crate::lattice::Lattice>().open = true,
         UiPanel::Controls => {
             let mut pause = world.resource_mut::<game_ui::PauseMenuState>();
             pause.open();

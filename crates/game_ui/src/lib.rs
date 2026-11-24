@@ -16,8 +16,8 @@ pub use hud::{HudFont, HudObjective, HudRootNode, HudTitleFont, OperativeName};
 pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
 pub use mission_hud::{ActiveSubtitle, Banner, BannerTone, MissionHud};
 pub use pause_menu::{
-    any_menu_open, ControlsBadgeState, GameplayHold, PauseButton, PauseMenuState, PausePage,
-    ScreenOverlay, CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
+    any_menu_open, ControlsBadgeState, GameplayHold, ModalPause, PauseButton, PauseMenuState,
+    PausePage, ScreenOverlay, CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
 };
 pub use settings_ui::{SettingsModalState, SettingsTab, UserSettingsConfig, UserSettingsPath};
 pub use skills_ui::{SkillRow, SkillsModalState, SkillsSummary};
@@ -126,6 +126,7 @@ impl Plugin for UiPlugin {
             .init_resource::<MissionHud>()
             .init_resource::<ActiveSubtitle>()
             .init_resource::<GameplayHold>()
+            .init_resource::<ModalPause>()
             .init_resource::<ScreenOverlay>()
             .init_resource::<OperativeName>()
             .add_event::<game_audio::SubtitleDisplayEvent>()

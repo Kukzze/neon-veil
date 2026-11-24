@@ -368,15 +368,21 @@ pub fn handle_pause_buttons(
 
 /// Freezes the simulation while the pause menu (or settings opened from
 /// it) is up.
+/// Set by full-screen modals outside this crate (the passive tree) that
+/// freeze the simulation like the pause menu does.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ModalPause(pub bool);
+
 pub fn pause_simulation_time(
     pause: Res<PauseMenuState>,
     settings: Res<SettingsModalState>,
+    modal: Option<Res<ModalPause>>,
     time: Option<ResMut<Time<Virtual>>>,
 ) {
     let Some(mut time) = time else {
         return;
     };
-    let paused = pause.is_open || settings.is_open;
+    let paused = pause.is_open || settings.is_open || modal.is_some_and(|m| m.0);
     if paused && !time.is_paused() {
         time.pause();
     } else if !paused && time.is_paused() {
