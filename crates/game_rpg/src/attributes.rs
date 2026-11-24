@@ -192,7 +192,7 @@ impl CharacterAttributes {
             shield_recharge_rate: BASE_SHIELD_RECHARGE_RATE
                 * m("shield_recharge_rate")
                 * pct(P::ShieldRecharge),
-            armor_rating: (3.0 * endurance + flat(P::Armor)) * m("armor_rating"),
+            armor_rating: 3.0 * endurance * m("armor_rating"),
             armor_shred: 0.0,
             stamina_max: (BASE_STAMINA + agility + flat(P::Stamina)) * m("stamina_max"),
             stamina_regen: BASE_STAMINA_REGEN * (1.0 + 0.01 * agility) * m("stamina_efficiency"),
@@ -310,6 +310,7 @@ type VitalsQuery<'a> = (
 );
 
 /// Applies every damage source to characters with [`Health`].
+#[allow(clippy::too_many_arguments)]
 pub fn apply_combat_damage(
     mut melee_hits: EventReader<MeleeHitEvent>,
     mut ranged_hits: EventReader<RangedHitEvent>,
@@ -317,6 +318,7 @@ pub fn apply_combat_damage(
     mut damage_events: EventReader<DamageEvent>,
     mut vitals: Query<VitalsQuery>,
     scales: Query<&crate::passive_tree::MeleeDamageScale>,
+    incoming: Query<&crate::passive_tree::IncomingDamageScale>,
     mut deaths: EventWriter<DeathEvent>,
 ) {
     let mut hits: Vec<(Entity, Option<Entity>, f32, f32)> = Vec::new();
@@ -352,6 +354,7 @@ pub fn apply_combat_damage(
     );
 
     for (target, source, damage, armor_shred) in hits {
+        let damage = damage * incoming.get(target).map_or(1.0, |s| s.0);
         let Ok((mut health, shields, attributes)) = vitals.get_mut(target) else {
             continue;
         };
