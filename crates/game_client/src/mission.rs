@@ -518,6 +518,12 @@ pub fn spawn_showcase(
                 .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
         ));
     }
+    let boss_at = Vec3::new(6.5, BOSS_SPAWN.y, player.translation.z - 12.0);
+    let boss = spawn_boss_gorgon(&mut commands, boss_at);
+    commands.entity(boss).insert(
+        Transform::from_translation(boss_at)
+            .with_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
+    );
     commands.remove_resource::<ShowcaseEnemies>();
 }
 

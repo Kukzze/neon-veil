@@ -367,6 +367,251 @@ fn spawn_drone(parent: &mut ChildBuilder, a: &EnemyAssets) {
     ));
 }
 
+/// A rigid piece of gear that rides a body's animated skeleton: placed
+/// between two joints and offset in the body's facing frame, so armour and
+/// weapons stay on the limbs they belong to.
+#[derive(Component, Debug, Clone)]
+pub struct GearMount {
+    /// The operative body (its `OperativeBody` root) carrying the gear.
+    pub body: Entity,
+    pub from: &'static str,
+    pub to: &'static str,
+    /// 0 at `from`, 1 at `to`.
+    pub along: f32,
+    /// Offset in the body's frame (+Z forward, +Y up, +X its left), metres.
+    pub offset: Vec3,
+    /// Point local +Y down the bone (barrels, limb plates) instead of
+    /// keeping the body's orientation (chest plates, packs).
+    pub align: bool,
+    /// Local shape: scale and extra rotation, before the body's scale.
+    pub shape: Transform,
+    /// Spin about local Y, radians per second (rotary barrels).
+    pub spin: f32,
+    pub angle: f32,
+}
+
+impl GearMount {
+    pub fn new(body: Entity, from: &'static str, to: &'static str, along: f32) -> Self {
+        Self {
+            body,
+            from,
+            to,
+            along,
+            offset: Vec3::ZERO,
+            align: false,
+            shape: Transform::IDENTITY,
+            spin: 0.0,
+            angle: 0.0,
+        }
+    }
+
+    pub fn offset(mut self, offset: Vec3) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn aligned(mut self) -> Self {
+        self.align = true;
+        self
+    }
+
+    pub fn shape(mut self, size: Vec3) -> Self {
+        self.shape.scale = size;
+        self
+    }
+
+    pub fn spinning(mut self, spin: f32) -> Self {
+        self.spin = spin;
+        self
+    }
+}
+
+/// World transform of a mount, given its two joints and the body's frame.
+pub fn mount_transform(mount: &GearMount, a: Vec3, b: Vec3, body: &GlobalTransform) -> Transform {
+    let (scale, facing, _) = body.to_scale_rotation_translation();
+    let point = a.lerp(b, mount.along);
+    let base = if mount.align {
+        Quat::from_rotation_arc(Vec3::Y, (b - a).normalize_or(Vec3::Y))
+    } else {
+        facing
+    };
+    Transform {
+        translation: point + facing * (mount.offset * scale),
+        rotation: base * Quat::from_rotation_y(mount.angle) * mount.shape.rotation,
+        scale: mount.shape.scale * scale,
+    }
+}
+
+/// Moves gear onto its body's posed skeleton (after transforms propagate).
+#[allow(clippy::type_complexity)]
+pub fn follow_gear_mounts(
+    time: Res<Time>,
+    mut commands: Commands,
+    bodies: Query<&crate::character::BodyInstance>,
+    globals: Query<&GlobalTransform, Without<GearMount>>,
+    mut gear: Query<(
+        Entity,
+        &mut GearMount,
+        &mut Transform,
+        &mut GlobalTransform,
+        &mut Visibility,
+    )>,
+) {
+    for (entity, mut mount, mut transform, mut global, mut visibility) in &mut gear {
+        let Ok(body_global) = globals.get(mount.body) else {
+            // The body is gone (its enemy died): the gear goes too.
+            commands.entity(entity).despawn_recursive();
+            continue;
+        };
+        let joints = bodies.iter().find(|b| b.root == mount.body).and_then(|b| {
+            let joint = |name: &str| {
+                let index = *b.skeleton.index.get(name)?;
+                globals.get(*b.skeleton.joints.get(index)?).ok()
+            };
+            Some((
+                joint(mount.from)?.translation(),
+                joint(mount.to)?.translation(),
+            ))
+        });
+        let Some((a, b)) = joints else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        mount.angle = (mount.angle + mount.spin * time.delta_secs()) % std::f32::consts::TAU;
+        *transform = mount_transform(&mount, a, b, body_global);
+        *global = GlobalTransform::from(*transform);
+        *visibility = Visibility::Inherited;
+    }
+}
+
+/// The Gorgon: a giant augmented enforcer in a heavy exosuit.
+pub fn gorgon_look() -> CharacterAppearance {
+    let mut look = CharacterAppearance::preset(Preset::Bruiser);
+    for (id, value) in [
+        ("gender", -1.0),
+        ("muscle", 1.0),
+        ("weight", 0.55),
+        ("height", 1.0),
+        ("shoulders", 1.0),
+        ("neck_width", 1.0),
+        ("jaw_width", 0.9),
+        ("jaw_bones", 0.8),
+        ("upperarm_muscle", 1.0),
+        ("forearm_muscle", 1.0),
+        ("thigh_muscle", 0.8),
+        ("age", 0.35),
+    ] {
+        look.set_slider(id, value);
+    }
+    look.skin_tone = crate::character::appearance::SKIN_TONES[4];
+    look.hair_mesh = String::new();
+    look.hair = crate::character::HairStyle::Shaved;
+    look.clothing = vec!["male_worksuit01".to_owned(), "shoes06".to_owned()];
+    look
+}
+
+/// Body scale of the Gorgon (a 2.3 m giant).
+const GORGON_SCALE: f32 = 1.3;
+/// Half height of the Gorgon's collider capsule: its feet sit here.
+const GORGON_FEET: f32 = 0.9;
+
+fn spawn_gorgon_body(
+    commands: &mut Commands,
+    a: &EnemyAssets,
+    asset_server: &AssetServer,
+    boss: Entity,
+) {
+    let at = Transform::from_xyz(0.0, -GORGON_FEET, 0.0)
+        .with_rotation(Quat::from_rotation_y(std::f32::consts::PI))
+        .with_scale(Vec3::splat(GORGON_SCALE));
+    let body = spawn_operative_body_at(commands, asset_server, boss, gorgon_look(), at);
+    let mut piece = |mesh: &Handle<Mesh>, material: &Handle<StandardMaterial>, mount: GearMount| {
+        commands.spawn((
+            Name::new("Gorgon Gear"),
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::default(),
+            Visibility::Hidden,
+            mount,
+        ));
+    };
+    // Chest plate with a glowing core, and a reactor pack on the back.
+    piece(
+        &a.cube,
+        &a.plate,
+        GearMount::new(body, "spine_02", "spine_03", 0.6)
+            .offset(Vec3::new(0.0, 0.0, 0.2))
+            .shape(Vec3::new(0.36, 0.3, 0.08)),
+    );
+    piece(
+        &a.sphere,
+        &a.red,
+        GearMount::new(body, "spine_02", "spine_03", 0.5)
+            .offset(Vec3::new(0.0, 0.0, 0.245))
+            .shape(Vec3::splat(0.045)),
+    );
+    piece(
+        &a.cube,
+        &a.plate,
+        GearMount::new(body, "spine_02", "spine_03", 0.5)
+            .offset(Vec3::new(0.0, 0.02, -0.22))
+            .shape(Vec3::new(0.36, 0.42, 0.16)),
+    );
+    for x in [-0.1f32, 0.1] {
+        piece(
+            &a.cube,
+            &a.amber,
+            GearMount::new(body, "spine_02", "spine_03", 0.5)
+                .offset(Vec3::new(x, 0.02, -0.305))
+                .shape(Vec3::new(0.05, 0.3, 0.02)),
+        );
+    }
+    // Visor across the eyes.
+    piece(
+        &a.cube,
+        &a.red,
+        GearMount::new(body, "head", "head", 0.0)
+            .offset(Vec3::new(0.0, 0.1, 0.13))
+            .shape(Vec3::new(0.16, 0.025, 0.03)),
+    );
+    for (upper, lower, hand, side) in [
+        ("upperarm_l", "lowerarm_l", "hand_l", 1.0f32),
+        ("upperarm_r", "lowerarm_r", "hand_r", -1.0),
+    ] {
+        // Pauldron over the shoulder joint.
+        piece(
+            &a.sphere,
+            &a.plate,
+            GearMount::new(body, upper, lower, 0.08)
+                .offset(Vec3::new(side * 0.02, 0.05, 0.0))
+                .shape(Vec3::new(0.16, 0.12, 0.16)),
+        );
+        // Forearm-mounted rotary chaingun: housing, spinning barrels, muzzle.
+        piece(
+            &a.cube,
+            &a.suit,
+            GearMount::new(body, lower, hand, 0.55)
+                .aligned()
+                .shape(Vec3::new(0.15, 0.3, 0.15)),
+        );
+        piece(
+            &a.cube,
+            &a.plate,
+            GearMount::new(body, lower, hand, 1.35)
+                .aligned()
+                .shape(Vec3::new(0.09, 0.42, 0.09))
+                .spinning(18.0),
+        );
+        piece(
+            &a.sphere,
+            &a.amber,
+            GearMount::new(body, lower, hand, 1.95)
+                .aligned()
+                .shape(Vec3::splat(0.035)),
+        );
+    }
+}
+
 fn spawn_gorgon(parent: &mut ChildBuilder, a: &EnemyAssets) {
     parent
         .spawn((
@@ -521,10 +766,14 @@ pub fn dress_new_enemies(
         spawn_health_bar(&mut commands, &assets, entity, height);
     }
     for entity in &bosses {
-        commands
-            .entity(entity)
-            .insert(Visibility::default())
-            .with_children(|root| spawn_gorgon(root, &assets));
+        commands.entity(entity).insert(Visibility::default());
+        if library.is_some() {
+            spawn_gorgon_body(&mut commands, &assets, &asset_server, entity);
+        } else {
+            commands
+                .entity(entity)
+                .with_children(|root| spawn_gorgon(root, &assets));
+        }
         spawn_health_bar(&mut commands, &assets, entity, 2.6);
     }
 }
@@ -640,12 +889,37 @@ impl Plugin for EnemyVisualsPlugin {
                 age_death_bursts,
             ),
         );
+        app.add_systems(
+            PostUpdate,
+            follow_gear_mounts.after(bevy::transform::TransformSystem::TransformPropagate),
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gear_sits_between_joints_and_follows_the_body_frame() {
+        let body = GlobalTransform::from(
+            Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI))
+                .with_scale(Vec3::splat(2.0)),
+        );
+        let mount = GearMount::new(Entity::PLACEHOLDER, "a", "b", 0.5)
+            .offset(Vec3::new(0.0, 0.0, 0.1))
+            .shape(Vec3::splat(0.5));
+        let t = mount_transform(&mount, Vec3::ZERO, Vec3::Y * 2.0, &body);
+        // Midpoint, pushed 0.1 m (scaled x2) along the body's turned +Z.
+        assert!((t.translation - Vec3::new(0.0, 1.0, -0.2)).length() < 1e-5);
+        assert!((t.scale - Vec3::ONE).length() < 1e-5);
+        let barrel = GearMount::new(Entity::PLACEHOLDER, "a", "b", 1.0).aligned();
+        let t = mount_transform(&barrel, Vec3::ZERO, Vec3::X, &body);
+        assert!(
+            (t.rotation * Vec3::Y - Vec3::X).length() < 1e-5,
+            "barrel follows the bone"
+        );
+    }
 
     #[test]
     fn health_fraction_prefers_the_boss_pool_and_clamps() {
