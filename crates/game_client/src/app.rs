@@ -341,10 +341,12 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
         ))
         .insert_resource(game_audio::VoiceAssetRoot(asset_root()));
     if let Some(path) = options.capture {
-        let view = options.capture_view.map_or(CAPTURE_VIEW, |(yaw, pitch)| {
-            ((yaw as f32).to_radians(), (pitch as f32).to_radians())
-        });
-        let mut capture = FrameCapture::new(path).with_view(view);
+        let mut capture = FrameCapture::new(path);
+        // Only an explicit view is held; otherwise the player can look
+        // around (input-driven checks).
+        capture.view = options
+            .capture_view
+            .map(|(yaw, pitch)| ((yaw as f32).to_radians(), (pitch as f32).to_radians()));
         capture.open_panel = options.open_panel;
         if let Some(secs) = options.capture_after {
             capture.after_seconds = secs as f32;
@@ -366,7 +368,7 @@ pub struct FrameCapture {
     pub after_seconds: f32,
     pub requested_at: Option<f32>,
     /// View yaw and pitch held during the capture, radians.
-    pub view: (f32, f32),
+    pub view: Option<(f32, f32)>,
     /// Panel opened shortly before the shot (opening it at launch would
     /// pause the game before the session connects).
     pub open_panel: Option<UiPanel>,
@@ -392,13 +394,13 @@ impl FrameCapture {
             path,
             after_seconds: 6.0,
             requested_at: None,
-            view: CAPTURE_VIEW,
+            view: Some(CAPTURE_VIEW),
             open_panel: None,
         }
     }
 
     pub fn with_view(mut self, view: (f32, f32)) -> Self {
-        self.view = view;
+        self.view = Some(view);
         self
     }
 }
@@ -415,8 +417,10 @@ fn capture_frame_and_exit(
 ) {
     use bevy::render::view::screenshot::{save_to_disk, Screenshot};
     // Repeatable framing: look straight up the avenue, slightly down.
-    for mut view in &mut views {
-        *view = game_core::input::ViewAngles::new(capture.view.0, capture.view.1);
+    if let Some((yaw, pitch)) = capture.view {
+        for mut view in &mut views {
+            *view = game_core::input::ViewAngles::new(yaw, pitch);
+        }
     }
     let now = time.elapsed_secs();
     if now >= capture.after_seconds - 1.5 {
