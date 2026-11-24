@@ -1,5 +1,6 @@
 //! RPG progression: skills, the OSRS XP curve, vitals, cyber-mods and quests.
 
+pub mod arsenal;
 pub mod attributes;
 pub mod mod_catalog;
 pub mod mod_system;
@@ -9,14 +10,18 @@ pub mod quest_engine;
 pub mod skills;
 pub mod xp_table;
 
+pub use arsenal::{
+    weapon_bases, weapon_mods, Element, HitDamage, ModEffect, Rarity, WeaponBase, WeaponClass,
+    WeaponItem, WeaponMod, WeaponStats,
+};
 pub use attributes::{
     resolve_damage, CharacterAttributes, DamageEvent, DamageOutcome, DeathEvent, Health, Shields,
 };
 pub use mod_catalog::{find_mod, find_mod_by_name, MOD_CATALOG};
 pub use mod_system::{CyberModCard, ModLoadout, ModLoadoutError, ModPolarity};
 pub use passive_tree::{
-    kill_xp, level_progress, AllocateError, Branch, MeleeDamageScale, NodeKind, PassiveBonuses,
-    PassiveNode, PassiveProgress, PassiveStat, PassiveTree,
+    kill_xp, level_progress, AllocateError, Branch, IncomingDamageScale, MeleeDamageScale,
+    NodeKind, PassiveBonuses, PassiveNode, PassiveProgress, PassiveStat, PassiveTree,
 };
 pub use quest_catalog::{find_quest, MASTER_QUEST_CATALOG};
 pub use quest_engine::{
