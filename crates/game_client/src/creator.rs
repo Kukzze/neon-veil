@@ -241,6 +241,11 @@ pub fn enter_creator(
         },
         // The game renders deferred; this camera needs the same prepasses.
         Msaa::Off,
+        bevy::core_pipeline::fxaa::Fxaa {
+            enabled: true,
+            edge_threshold: bevy::core_pipeline::fxaa::Sensitivity::Ultra,
+            edge_threshold_min: bevy::core_pipeline::fxaa::Sensitivity::Ultra,
+        },
         DepthPrepass,
         DeferredPrepass,
         Tonemapping::AgX,

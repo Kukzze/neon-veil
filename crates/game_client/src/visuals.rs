@@ -199,8 +199,14 @@ fn setup_night_scene(
             Tonemapping::AgX,
             DebandDither::Enabled,
             // Deferred shading with screen-space reflections: the wet asphalt
-            // mirrors the neon. Deferred rendering requires MSAA off.
+            // mirrors the neon. Deferred rendering requires MSAA off, so FXAA
+            // smooths the edges instead.
             Msaa::Off,
+            bevy::core_pipeline::fxaa::Fxaa {
+                enabled: true,
+                edge_threshold: bevy::core_pipeline::fxaa::Sensitivity::High,
+                edge_threshold_min: bevy::core_pipeline::fxaa::Sensitivity::High,
+            },
             ScreenSpaceReflections {
                 perceptual_roughness_threshold: 0.35,
                 thickness: 0.3,
