@@ -3,6 +3,7 @@
 //! otherwise).
 
 pub mod app;
+pub mod armory;
 pub mod character;
 pub mod client_network;
 pub mod combat_fx;

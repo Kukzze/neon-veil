@@ -12,7 +12,9 @@ pub mod settings_ui;
 pub mod skills_ui;
 pub mod theme;
 
-pub use hud::{HudFont, HudObjective, HudRootNode, HudTitleFont, OperativeName};
+pub use hud::{
+    FireModeUi, HudFont, HudObjective, HudRootNode, HudTitleFont, OperativeName, WeaponNameUi,
+};
 pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
 pub use mission_hud::{ActiveSubtitle, Banner, BannerTone, MissionHud};
 pub use pause_menu::{

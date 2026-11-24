@@ -12,7 +12,7 @@ use game_audio::PlaySfxEvent;
 use game_input::GameplayInputGate;
 
 /// Controls listed on the controls page.
-pub const CONTROL_BINDINGS: [(&str, &str); 16] = [
+pub const CONTROL_BINDINGS: [(&str, &str); 18] = [
     ("W A S D", "Move"),
     ("Mouse", "Look"),
     ("Space", "Jump"),
@@ -28,13 +28,15 @@ pub const CONTROL_BINDINGS: [(&str, &str); 16] = [
     ("V", "Toggle camera perspective"),
     ("Tab", "Inventory"),
     ("K", "Skills"),
+    ("P", "Neural Lattice (passive tree)"),
+    ("I", "Armory (weapons)"),
     ("Esc", "Pause menu"),
 ];
 
 /// One-line summary shown in the badge.
 pub const CONTROLS_BADGE_TEXT: &str =
     "WASD Move  |  Mouse Look  |  Space Jump  |  Shift Sprint  |  \
-C Slide  |  LMB Katana  |  RMB Guard  |  Tab Inventory  |  K Skills  |  Esc Menu  |  F1 Hide";
+C Slide  |  LMB Attack  |  RMB Guard  |  Tab Inventory  |  I Armory  |  P Lattice  |  K Skills  |  Esc Menu  |  F1 Hide";
 
 /// Capture mode for gameplay. Windows cannot lock the cursor, so it is
 /// confined there; mouse look reads raw motion either way.

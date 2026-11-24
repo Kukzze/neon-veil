@@ -164,6 +164,8 @@ pub struct Progress {
     pub tutorial_done: bool,
     /// Experience and owned passive tree nodes.
     pub passive: game_rpg::PassiveProgress,
+    /// Owned weapons and the equipped one.
+    pub armory: crate::armory::ArmoryData,
 }
 
 #[derive(Resource, Debug, Clone)]

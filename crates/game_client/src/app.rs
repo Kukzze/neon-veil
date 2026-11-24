@@ -335,6 +335,7 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             crate::character::CharacterPlugin,
             crate::coop::CoopPlugin,
             crate::lattice::LatticePlugin,
+            crate::armory::ArmoryPlugin,
             crate::creator::CreatorPlugin {
                 start,
                 face_view: options.creator_face,
