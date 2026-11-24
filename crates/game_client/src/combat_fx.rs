@@ -208,11 +208,45 @@ pub fn pose_avatar_bodies(
 
 /// Turns the local character to the camera yaw; melee hitboxes are placed
 /// in the character's frame.
+/// Turn rate of the body towards where it should face, 1/s.
+const FACING_TURN_RATE: f32 = 14.0;
+
+/// Yaw that faces along a planar velocity (yaw 0 faces -Z, positive turns left).
+pub fn yaw_along(velocity: Vec3) -> Option<f32> {
+    let planar = Vec2::new(velocity.x, velocity.z);
+    (planar.length() > 0.6).then(|| f32::atan2(-planar.x, -planar.y))
+}
+
+/// The body turns towards where the player moves; while attacking or
+/// guarding it squares up to the camera so swings land where you aim.
 pub fn face_local_player_to_camera(
-    mut players: Query<(&ViewAngles, &mut Transform), With<LocalPredictedPlayer>>,
+    time: Res<Time>,
+    mut players: Query<
+        (
+            &ViewAngles,
+            &mut Transform,
+            Option<&game_parkour::KinematicVelocity>,
+            Option<&MeleeCombatState>,
+        ),
+        With<LocalPredictedPlayer>,
+    >,
 ) {
-    for (view, mut transform) in &mut players {
-        transform.rotation = Quat::from_rotation_y(view.yaw);
+    let blend = 1.0 - (-FACING_TURN_RATE * time.delta_secs()).exp();
+    for (view, mut transform, velocity, melee) in &mut players {
+        let fighting = melee.is_some_and(|m| m.attack_phase != AttackPhase::Idle || m.is_parrying);
+        let target = if fighting {
+            Some(view.yaw)
+        } else {
+            velocity.and_then(|v| yaw_along(v.0))
+        };
+        if let Some(yaw) = target {
+            let wanted = Quat::from_rotation_y(yaw);
+            transform.rotation = if fighting {
+                wanted
+            } else {
+                transform.rotation.slerp(wanted, blend)
+            };
+        }
     }
 }
 
@@ -229,6 +263,17 @@ mod tests {
         state.current_combo_index = index;
         state.frame_counter = frame;
         state
+    }
+
+    #[test]
+    fn facing_follows_planar_motion() {
+        assert_eq!(yaw_along(Vec3::ZERO), None, "standing keeps its facing");
+        assert!(
+            yaw_along(Vec3::new(0.0, 0.0, -5.0)).unwrap().abs() < 1e-6,
+            "forward is -Z"
+        );
+        let left = yaw_along(Vec3::new(-5.0, 0.0, 0.0)).unwrap();
+        assert!((left - FRAC_PI_2).abs() < 1e-6, "moving -X turns left");
     }
 
     #[test]

@@ -9,10 +9,11 @@ use bevy::prelude::*;
 use game_combat::{AttackPhase, MeleeCombatState};
 use game_parkour::KinematicVelocity;
 use game_server::{SPRINT_SPEED, WALK_SPEED};
+use std::f32::consts::{PI, TAU};
 
-/// Stride length (one full cycle covers two steps), metres.
-const STRIDE: f32 = 2.6;
 const BLEND_RATE: f32 = 10.0;
+/// How fast a landing squash recovers, 1/s.
+const LAND_RECOVERY: f32 = 3.2;
 
 /// Gameplay state a pose is built from.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -36,6 +37,10 @@ pub struct PoseState {
     pub air: f32,
     pub slide: f32,
     pub guard: f32,
+    /// Smoothed vertical speed, -1 falling to 1 rising.
+    pub rise: f32,
+    /// Landing squash, 1 on a hard touchdown, recovering to 0.
+    pub land: f32,
     /// Soft-tissue offset per side (x: bounce, y: sway), radians.
     pub jiggle: [Vec2; 2],
     pub jiggle_velocity: [Vec2; 2],
@@ -97,55 +102,115 @@ impl PoseState {
         } else {
             (input.speed / WALK_SPEED).min(1.0)
         };
+        // Touchdown: a squash scaled by how hard the body came down.
+        if self.air > 0.5 && !input.airborne && !input.sliding {
+            self.land = (-self.last_vertical / 9.0).clamp(0.35, 1.0);
+        }
+        self.land = (self.land - dt * LAND_RECOVERY).max(0.0);
         ease(&mut self.gait, moving);
         ease(
             &mut self.sprint,
             ((input.speed - WALK_SPEED) / (SPRINT_SPEED - WALK_SPEED)).clamp(0.0, 1.0),
         );
         ease(&mut self.air, if input.airborne { 1.0 } else { 0.0 });
+        ease(&mut self.rise, (input.vertical / 5.0).clamp(-1.0, 1.0));
         ease(&mut self.slide, if input.sliding { 1.0 } else { 0.0 });
         ease(&mut self.guard, if input.guarding { 1.0 } else { 0.0 });
         self.time += dt;
-        self.phase = (self.phase + input.speed / STRIDE * std::f32::consts::TAU * dt)
-            .rem_euclid(std::f32::consts::TAU);
+        self.phase =
+            (self.phase + input.speed / stride_length(input.speed) * TAU * dt).rem_euclid(TAU);
     }
+
+    /// 1 standing still on the ground, 0 moving, airborne or sliding.
+    fn idle(&self) -> f32 {
+        ((1.0 - self.gait) * (1.0 - self.air) * (1.0 - self.slide)).clamp(0.0, 1.0)
+    }
+}
+
+/// Metres per full gait cycle (two steps): longer strides at speed, so the
+/// cadence climbs from a jog to a sprint instead of the legs windmilling.
+pub fn stride_length(speed: f32) -> f32 {
+    1.7 + 0.36 * speed
 }
 
 /// Desired rig-space directions per limb bone for the current state.
 pub fn limb_targets(state: &PoseState, input: &PoseInputs) -> Vec<(&'static str, Vec3)> {
-    let swing = state.phase.sin();
     let gait = state.gait;
-    let amp_leg = (0.45 + 0.35 * state.sprint) * gait;
-    let amp_arm = (0.35 + 0.45 * state.sprint) * gait;
+    let sprint = state.sprint * gait;
+    let idle = state.idle();
+    let air = state.air;
+    let land = state.land;
+    // Weight shift while standing: slow, so the stance never looks frozen.
+    let shift = (state.time * 0.55).sin() * idle;
     let down = |side: f32, out: f32| Vec3::new(side * out, -1.0, 0.0).normalize();
     let rot_x = |angle: f32, v: Vec3| Quat::from_rotation_x(angle) * v;
 
-    let mut out = Vec::with_capacity(8);
-    for (side, name_thigh, name_calf, sign) in [
-        (1.0, "thigh_l", "calf_l", -1.0),
-        (-1.0, "thigh_r", "calf_r", 1.0),
+    let mut out = Vec::with_capacity(12);
+    for (side, thigh_name, calf_name, foot_name, offset) in [
+        (1.0f32, "thigh_l", "calf_l", "foot_l", 0.0),
+        (-1.0, "thigh_r", "calf_r", "foot_r", PI),
     ] {
-        // Forward swing is a negative rotation about X for a hanging limb.
-        let leg_swing = sign * swing * amp_leg;
-        let tuck = -0.55 * state.air;
-        let slide_leg = if side > 0.0 { -1.35 } else { -0.55 };
-        let thigh_angle = (leg_swing + tuck) * (1.0 - state.slide) + slide_leg * state.slide;
-        let thigh = rot_x(thigh_angle, down(side, 0.06));
-        let knee = (0.15 + 0.65 * (sign * (state.phase + 0.9).sin()).max(0.0) * gait)
-            * (1.0 - state.slide)
-            + 0.9 * state.air
-            + if side > 0.0 { 0.1 } else { 1.5 } * state.slide;
-        out.push((name_thigh, thigh));
-        out.push((name_calf, rot_x(knee, thigh)));
+        let s = state.phase + offset;
+        // How far forward this leg is (-1 back, 1 front) and whether it is
+        // travelling forward (foot in the air) or back (planted).
+        let front = s.sin();
+        let swinging = s.cos();
+        let reach = 0.42 + 0.3 * sprint;
+        let thigh_gait = -front * reach * if front > 0.0 { 1.0 } else { 0.75 };
+        let knee_gait = 0.12
+            + (0.75 + 0.75 * sprint) * swinging.max(0.0).powf(1.4)
+            + 0.12 * (1.0 - swinging.abs());
+        // Airborne: rising tucks one knee up, falling reaches for the ground.
+        let lead = if side > 0.0 { 1.0 } else { 0.0 };
+        let thigh_rise = -0.95 * lead - 0.1;
+        let knee_rise = 1.35 * lead + 0.7 * (1.0 - lead);
+        let thigh_fall = -0.32 - 0.18 * lead;
+        let knee_fall = 0.35;
+        let rising = state.rise.max(0.0);
+        let thigh_air = thigh_fall + (thigh_rise - thigh_fall) * rising;
+        let knee_air = knee_fall + (knee_rise - knee_fall) * rising;
+        // Standing: the loaded leg straight, the other knee eased.
+        let loaded = if side > 0.0 { shift } else { -shift };
+        let thigh_idle = -0.04 + 0.05 * (-loaded).max(0.0);
+        let knee_idle = 0.06 + 0.16 * (-loaded).max(0.0);
+        let slide_thigh = if side > 0.0 { -1.35 } else { -0.55 };
+        let slide_knee = if side > 0.0 { 0.1 } else { 1.5 };
+
+        let mut thigh = thigh_gait * gait + thigh_air * air + thigh_idle * idle;
+        let mut knee = knee_gait * gait + knee_air * air + knee_idle * idle;
+        thigh = thigh * (1.0 - state.slide) + slide_thigh * state.slide;
+        knee = knee * (1.0 - state.slide) + slide_knee * state.slide;
+        // Landing squash: hips sink, knees fold.
+        thigh -= 0.45 * land;
+        knee += 0.9 * land;
+        let thigh_dir = rot_x(thigh, down(side, 0.05 + 0.03 * idle));
+        let calf_dir = rot_x(knee, thigh_dir);
+        // Feet stay near level: toe-off pushes the toe down, heel strike
+        // lifts it, in the air the toes point down.
+        let toe = 0.35 * (-front).max(0.0) * swinging.max(0.0) * gait
+            - 0.2 * front.max(0.0) * (1.0 - swinging.abs()) * gait
+            + 0.45 * air;
+        let foot_dir = rot_x(toe, Vec3::new(0.0, -0.35, 1.0).normalize());
+        out.push((thigh_name, thigh_dir));
+        out.push((calf_name, calf_dir));
+        out.push((foot_name, foot_dir));
     }
 
-    for (side, upper, lower, sign) in [
-        (1.0, "upperarm_l", "lowerarm_l", 1.0),
-        (-1.0, "upperarm_r", "lowerarm_r", -1.0),
+    for (side, upper, lower, offset) in [
+        (1.0f32, "upperarm_l", "lowerarm_l", PI),
+        (-1.0, "upperarm_r", "lowerarm_r", 0.0),
     ] {
-        let arm_swing = sign * swing * amp_arm;
-        let mut arm = rot_x(arm_swing, down(side, 0.16));
-        let mut elbow = -0.25 - 0.9 * state.sprint * gait - 0.3 * state.air;
+        // Arms swing against the opposite leg.
+        let front = (state.phase + offset).sin();
+        let swing = -front * (0.32 + 0.5 * sprint) * gait;
+        let breath = (state.time * 1.7).sin() * 0.02 * idle;
+        let hang = 0.13 + 0.06 * idle + 0.5 * air * (1.0 - state.rise.max(0.0)) + 0.2 * land;
+        let mut arm = rot_x(
+            swing - 0.06 * idle + breath - 0.5 * air * state.rise.max(0.0),
+            down(side, hang),
+        );
+        let mut elbow =
+            -0.28 * idle - (0.35 + 1.05 * sprint) * gait - 0.25 * front.max(0.0) * gait - 0.5 * air;
         if state.slide > 0.0 {
             let braced = Vec3::new(side * 0.8, -0.35, -0.3).normalize();
             arm = arm.lerp(braced, state.slide).normalize();
@@ -172,18 +237,41 @@ pub fn limb_targets(state: &PoseState, input: &PoseInputs) -> Vec<(&'static str,
     out
 }
 
-/// Extra rig-space rotations for the spine and head.
-fn spine_offsets(state: &PoseState) -> [(&'static str, Quat); 3] {
-    let lean = 0.08 * state.gait + 0.18 * state.sprint * state.gait - 0.45 * state.slide;
-    let twist = state.phase.sin() * 0.12 * state.gait;
-    let breathe = (state.time * 1.6).sin() * 0.015;
+/// Extra rig-space rotations for the hips, spine and head.
+fn spine_offsets(state: &PoseState) -> [(&'static str, Quat); 5] {
+    let gait = state.gait;
+    let idle = state.idle();
+    let lean = 0.07 * gait + 0.22 * state.sprint * gait - 0.45 * state.slide
+        + 0.28 * state.land
+        + 0.12 * state.air * state.rise.max(0.0);
+    // Hips turn with the forward leg and the shoulders counter-rotate.
+    let twist = state.phase.sin() * (0.1 + 0.06 * state.sprint) * gait;
+    // Hips roll over the stance leg; at rest, over the loaded leg.
+    let roll = state.phase.cos() * 0.05 * gait + (state.time * 0.55).sin() * 0.035 * idle;
+    let breathe = (state.time * 1.7).sin() * 0.018 * (0.6 + 0.4 * idle);
+    // A slow look around while standing.
+    let look = (state.time * 0.23).sin() * 0.16 * idle + (state.time * 0.61).sin() * 0.04 * idle;
     [
-        ("spine_01", Quat::from_rotation_x(lean * 0.5)),
+        (
+            "pelvis",
+            Quat::from_rotation_y(-twist * 0.8) * Quat::from_rotation_z(roll),
+        ),
+        (
+            "spine_01",
+            Quat::from_rotation_x(lean * 0.4) * Quat::from_rotation_z(-roll * 0.6),
+        ),
         (
             "spine_02",
-            Quat::from_rotation_y(twist) * Quat::from_rotation_x(lean * 0.5 + breathe),
+            Quat::from_rotation_y(twist) * Quat::from_rotation_x(lean * 0.4 + breathe),
         ),
-        ("neck_01", Quat::from_rotation_x(-lean * 0.6)),
+        (
+            "spine_03",
+            Quat::from_rotation_x(lean * 0.2 - breathe * 0.5),
+        ),
+        (
+            "neck_01",
+            Quat::from_rotation_y(look - twist * 0.6) * Quat::from_rotation_x(-lean * 0.7),
+        ),
     ]
 }
 
@@ -242,7 +330,10 @@ pub fn evaluate_pose(
             done[i] = true;
         }
     }
-    let drop = 0.42 * state.slide + 0.04 * state.gait * (2.0 * state.phase).cos().abs();
+    // Hips dip as the legs spread, sink into slides and landings.
+    let drop = 0.42 * state.slide
+        + state.gait * (0.025 + 0.035 * state.sprint) * state.phase.sin().abs()
+        + 0.16 * state.land;
     (local, drop)
 }
 
