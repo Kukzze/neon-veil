@@ -17,7 +17,7 @@ use game_core::protocol::ClientMessage;
 use game_rpg::{Health, Shields};
 use game_ui::{Banner, BannerTone, GameplayHold, MissionHud};
 
-pub const MISSION_TITLE: &str = "NIGHT ONE // KUROSHIO AVENUE";
+pub const MISSION_TITLE: &str = "Night One · Kuroshio Avenue";
 /// Seconds the death screen holds before the respawn.
 pub const FLATLINE_SECONDS: f32 = 4.0;
 /// Seconds an encounter title banner stays up.
@@ -356,7 +356,7 @@ pub fn run_mission(
         Stage::Briefing if director.stage_time <= dt => {
             say("M1_00_INTRO");
             say("M1_01_AURA_ONLINE");
-            hud.banner = banner(MISSION_TITLE, "ZERO PROTOCOL", BannerTone::Info);
+            hud.banner = banner(MISSION_TITLE, "Zero Protocol", BannerTone::Info);
             director.banner_time = BANNER_SECONDS + 1.5;
         }
         Stage::Fight(i) if !director.spawned => {

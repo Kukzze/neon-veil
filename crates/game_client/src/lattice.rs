@@ -111,7 +111,7 @@ pub fn grant_experience(
     if let Some(level) = lattice.gain(gained) {
         hud.banner = Some(Banner {
             title: format!("LEVEL {level}"),
-            subtitle: "Neural point ready  //  press P".into(),
+            subtitle: "Neural point ready  ·  press P".into(),
             tone: BannerTone::Success,
         });
     }
@@ -289,6 +289,25 @@ fn node_radius(kind: NodeKind) -> f32 {
     }
 }
 
+/// Key hints as keycaps: a hairline box with the key, then the action.
+pub fn keycap_row(painter: &egui::Painter, at: egui::Pos2, hints: &[(&str, &str)]) {
+    let font = egui::FontId::monospace(11.0);
+    let mut x = at.x;
+    for (key, action) in hints {
+        let galley = painter.layout_no_wrap((*key).to_owned(), font.clone(), TEXT);
+        let cap = egui::Rect::from_min_size(
+            egui::pos2(x, at.y),
+            egui::vec2(galley.size().x + 12.0, galley.size().y + 4.0),
+        );
+        painter.rect_stroke(cap, 4.0, egui::Stroke::new(1.0, TEXT.gamma_multiply(0.16)));
+        painter.galley(cap.min + egui::vec2(6.0, 2.0), galley, TEXT);
+        let label = painter.layout_no_wrap((*action).to_owned(), font.clone(), MUTED);
+        let width = label.size().x;
+        painter.galley(egui::pos2(cap.max.x + 6.0, at.y + 2.0), label, MUTED);
+        x = cap.max.x + 6.0 + width + 16.0;
+    }
+}
+
 /// Draws the tree; left click buys, right click refunds, drag pans,
 /// wheel zooms.
 pub fn draw_lattice(
@@ -315,16 +334,20 @@ pub fn draw_lattice(
             }
             let center = rect.center() + lattice.pan;
             let zoom = lattice.zoom;
-            let to_screen =
-                |p: Vec2| center + egui::vec2(p.x, -p.y) * zoom;
+            let to_screen = |p: Vec2| center + egui::vec2(p.x, -p.y) * zoom;
             let painter = ui.painter_at(rect);
             let progress = &lattice.progress;
-            let owned: Vec<bool> = (0..tree.nodes.len()).map(|i| progress.owns(&tree, i)).collect();
+            let owned: Vec<bool> = (0..tree.nodes.len())
+                .map(|i| progress.owns(&tree, i))
+                .collect();
             let can_buy = progress.points_available() > 0;
 
             let view = rect.expand(40.0);
             for &(a, b) in &tree.links {
-                let (pa, pb) = (to_screen(tree.nodes[a].position), to_screen(tree.nodes[b].position));
+                let (pa, pb) = (
+                    to_screen(tree.nodes[a].position),
+                    to_screen(tree.nodes[b].position),
+                );
                 if !view.contains(pa) && !view.contains(pb) {
                     continue;
                 }
@@ -353,10 +376,7 @@ pub fn draw_lattice(
                 let (fill, stroke) = if owned[i] {
                     (color, egui::Stroke::new(2.0, egui::Color32::WHITE))
                 } else if reachable && can_buy {
-                    (
-                        color.gamma_multiply(0.25),
-                        egui::Stroke::new(2.0, color),
-                    )
+                    (color.gamma_multiply(0.25), egui::Stroke::new(2.0, color))
                 } else {
                     (BACKDROP, egui::Stroke::new(1.5, color.gamma_multiply(0.45)))
                 };
@@ -373,13 +393,15 @@ pub fn draw_lattice(
                 } else {
                     painter.circle(at, r, fill, stroke);
                 }
-                if matches!(node.kind, NodeKind::Notable | NodeKind::Keystone | NodeKind::Origin)
-                    && zoom > 0.7
+                if matches!(
+                    node.kind,
+                    NodeKind::Notable | NodeKind::Keystone | NodeKind::Origin
+                ) && zoom > 0.7
                 {
                     painter.text(
                         at + egui::vec2(0.0, r + 6.0),
                         egui::Align2::CENTER_TOP,
-                        node.name.to_uppercase(),
+                        node.name.clone(),
                         egui::FontId::monospace(10.5),
                         if owned[i] { color } else { MUTED },
                     );
@@ -399,36 +421,45 @@ pub fn draw_lattice(
                     lattice.dirty = true;
                 }
                 let node = &tree.nodes[i];
-                egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new("lattice_tip"), |ui| {
-                    ui.label(
-                        egui::RichText::new(node.name.to_uppercase())
-                            .color(branch_color(node.branch))
-                            .size(15.0)
-                            .strong(),
-                    );
-                    let kind = match node.kind {
-                        NodeKind::Origin => "Origin",
-                        NodeKind::Small => "Node",
-                        NodeKind::Notable => "Notable",
-                        NodeKind::Keystone => "Keystone",
-                    };
-                    ui.label(egui::RichText::new(kind).color(MUTED).size(11.0));
-                    for &(stat, value) in &node.stats {
-                        ui.label(egui::RichText::new(stat.describe(value)).color(TEXT).size(13.0));
-                    }
-                    let hint = if lattice.progress.owns(&tree, i) {
-                        "Right click to refund"
-                    } else if lattice.progress.reachable(&tree, i) {
-                        if lattice.progress.points_available() > 0 {
-                            "Left click to allocate"
-                        } else {
-                            "Earn a level to allocate"
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    ui.layer_id(),
+                    egui::Id::new("lattice_tip"),
+                    |ui| {
+                        ui.label(
+                            egui::RichText::new(node.name.clone())
+                                .color(branch_color(node.branch))
+                                .size(15.0)
+                                .strong(),
+                        );
+                        let kind = match node.kind {
+                            NodeKind::Origin => "Origin",
+                            NodeKind::Small => "Node",
+                            NodeKind::Notable => "Notable",
+                            NodeKind::Keystone => "Keystone",
+                        };
+                        ui.label(egui::RichText::new(kind).color(MUTED).size(11.0));
+                        for &(stat, value) in &node.stats {
+                            ui.label(
+                                egui::RichText::new(stat.describe(value))
+                                    .color(TEXT)
+                                    .size(13.0),
+                            );
                         }
-                    } else {
-                        "Connect to an owned node first"
-                    };
-                    ui.label(egui::RichText::new(hint).color(MUTED).size(11.0));
-                });
+                        let hint = if lattice.progress.owns(&tree, i) {
+                            "Right click to refund"
+                        } else if lattice.progress.reachable(&tree, i) {
+                            if lattice.progress.points_available() > 0 {
+                                "Left click to allocate"
+                            } else {
+                                "Earn a level to allocate"
+                            }
+                        } else {
+                            "Connect to an owned node first"
+                        };
+                        ui.label(egui::RichText::new(hint).color(MUTED).size(11.0));
+                    },
+                );
             }
 
             // Header: level, XP bar and points; footer: controls.
@@ -438,20 +469,24 @@ pub fn draw_lattice(
             painter.text(
                 header,
                 egui::Align2::LEFT_TOP,
-                "NEURAL LATTICE",
-                egui::FontId::monospace(22.0),
+                "Neural lattice",
+                egui::FontId::monospace(20.0),
                 TEXT,
             );
             painter.text(
                 header + egui::vec2(0.0, 32.0),
                 egui::Align2::LEFT_TOP,
                 format!(
-                    "LEVEL {}    {} / {} XP    {} POINT{} AVAILABLE",
+                    "Level {}  ·  {} / {} xp  ·  {} point{} to spend",
                     progress.level(),
                     into,
                     needed,
                     progress.points_available(),
-                    if progress.points_available() == 1 { "" } else { "S" }
+                    if progress.points_available() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
                 ),
                 egui::FontId::monospace(13.0),
                 if progress.points_available() > 0 {
@@ -460,17 +495,22 @@ pub fn draw_lattice(
                     MUTED
                 },
             );
-            let bar = egui::Rect::from_min_size(header + egui::vec2(0.0, 56.0), egui::vec2(320.0, 4.0));
+            let bar =
+                egui::Rect::from_min_size(header + egui::vec2(0.0, 56.0), egui::vec2(320.0, 4.0));
             painter.rect_filled(bar, 0.0, LINK_OFF);
             let mut fill = bar;
             fill.set_width(320.0 * into as f32 / needed.max(1) as f32);
             painter.rect_filled(fill, 0.0, egui::Color32::from_rgb(70, 220, 240));
-            painter.text(
-                rect.left_bottom() + egui::vec2(32.0, -28.0),
-                egui::Align2::LEFT_BOTTOM,
-                "LEFT CLICK allocate    RIGHT CLICK refund    DRAG pan    WHEEL zoom    P / ESC close",
-                egui::FontId::monospace(11.0),
-                MUTED,
+            keycap_row(
+                &painter,
+                rect.left_bottom() + egui::vec2(32.0, -40.0),
+                &[
+                    ("LMB", "Allocate"),
+                    ("RMB", "Refund"),
+                    ("Drag", "Pan"),
+                    ("Wheel", "Zoom"),
+                    ("P", "Close"),
+                ],
             );
         });
 }

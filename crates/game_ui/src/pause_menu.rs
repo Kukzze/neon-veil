@@ -3,7 +3,7 @@
 //! the cursor is free and gameplay input is gated; otherwise the cursor is
 //! captured for mouse look.
 
-use crate::hud::{hud_text, AMBER, CYAN, PANEL};
+use crate::hud::{hud_text, AMBER, CYAN, PANEL, TEXT};
 use crate::{HudFont, InventoryModalState, SettingsModalState, SkillsModalState};
 use bevy::app::AppExit;
 use bevy::prelude::*;
@@ -20,7 +20,10 @@ pub const CONTROL_BINDINGS: [(&str, &str); 21] = [
     ("C / Ctrl", "Crouch, slide while sprinting"),
     ("Shift into a crate", "Vault it"),
     ("Jump at a ledge", "Grab and climb it"),
-    ("Shift along a wall in the air", "Wall-run; Space kicks off the wall"),
+    (
+        "Shift along a wall in the air",
+        "Wall-run; Space kicks off the wall",
+    ),
     ("Alt", "Dodge roll"),
     ("LMB", "Katana combo / fire"),
     ("MMB", "Heavy attack"),
@@ -36,10 +39,22 @@ pub const CONTROL_BINDINGS: [(&str, &str); 21] = [
     ("Esc", "Pause menu"),
 ];
 
-/// One-line summary shown in the badge.
-pub const CONTROLS_BADGE_TEXT: &str =
-    "WASD Move  |  Mouse Look  |  Space Jump  |  Shift Sprint  |  \
-C Slide  |  LMB Attack  |  RMB Guard  |  Tab Inventory  |  I Armory  |  P Lattice  |  K Skills  |  Esc Menu  |  F1 Hide";
+/// Key hints shown in the badge, as keycap and action.
+pub const CONTROLS_BADGE: [(&str, &str); 13] = [
+    ("WASD", "Move"),
+    ("Mouse", "Look"),
+    ("Space", "Jump"),
+    ("Shift", "Sprint"),
+    ("C", "Slide"),
+    ("LMB", "Attack"),
+    ("RMB", "Guard"),
+    ("Tab", "Inventory"),
+    ("I", "Armory"),
+    ("P", "Lattice"),
+    ("K", "Skills"),
+    ("Esc", "Menu"),
+    ("F1", "Hide"),
+];
 
 /// Capture mode for gameplay. Windows cannot lock the cursor, so it is
 /// confined there; mouse look reads raw motion either way.
@@ -292,15 +307,41 @@ pub fn setup_pause_menu(mut commands: Commands, hud_font: Option<Res<HudFont>>) 
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(24.0),
-                bottom: Val::Px(150.0),
-                max_width: Val::Px(560.0),
+                bottom: Val::Px(148.0),
+                // A fixed width so the hints wrap into tidy rows.
+                width: Val::Px(560.0),
                 padding: UiRect::axes(Val::Px(12.0), Val::Px(8.0)),
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(12.0),
+                row_gap: Val::Px(8.0),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.02, 0.04, 0.06, 0.45)),
         ))
         .with_children(|b| {
-            b.spawn(hud_text(&font, CONTROLS_BADGE_TEXT, 12.0, MUTED));
+            // Each hint is a keycap and its action, so rows wrap cleanly.
+            for (key, action) in CONTROLS_BADGE {
+                b.spawn(Node {
+                    column_gap: Val::Px(6.0),
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|hint| {
+                    hint.spawn((
+                        Node {
+                            padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BorderColor(Color::srgba(0.93, 0.96, 1.0, 0.16)),
+                        BorderRadius::all(Val::Px(4.0)),
+                    ))
+                    .with_children(|cap| {
+                        cap.spawn(hud_text(&font, key, 11.0, TEXT));
+                    });
+                    hint.spawn(hud_text(&font, action, 11.0, MUTED));
+                });
+            }
         });
 }
 
@@ -462,7 +503,7 @@ mod tests {
     #[test]
     fn badge_lists_every_core_control() {
         for key in ["WASD", "Space", "Shift", "LMB", "Tab", "Esc"] {
-            assert!(CONTROLS_BADGE_TEXT.contains(key), "{key}");
+            assert!(CONTROLS_BADGE.iter().any(|(k, _)| *k == key), "{key}");
         }
         assert!(CONTROL_BINDINGS.iter().any(|(k, _)| *k == "Esc"));
     }

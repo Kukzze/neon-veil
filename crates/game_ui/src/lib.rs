@@ -19,7 +19,7 @@ pub use inventory_ui::{InventoryGrid, InventoryModalState, InventorySlotData};
 pub use mission_hud::{ActiveSubtitle, Banner, BannerTone, MissionHud};
 pub use pause_menu::{
     any_menu_open, ControlsBadgeState, GameplayHold, ModalPause, PauseButton, PauseMenuState,
-    PausePage, ScreenOverlay, CONTROLS_BADGE_TEXT, CONTROL_BINDINGS,
+    PausePage, ScreenOverlay, CONTROLS_BADGE, CONTROL_BINDINGS,
 };
 pub use settings_ui::{SettingsModalState, SettingsTab, UserSettingsConfig, UserSettingsPath};
 pub use skills_ui::{SkillRow, SkillsModalState, SkillsSummary};
@@ -277,7 +277,7 @@ mod tests {
             "shield, health, their trails and flow"
         );
         assert_eq!(world.query::<&hud::CrosshairArm>().iter(world).count(), 4);
-        assert_eq!(text::<AmmoCounterUi>(&mut app), "3-HIT COMBO");
+        assert_eq!(text::<AmmoCounterUi>(&mut app), "3-hit combo");
     }
 
     #[test]
@@ -296,10 +296,10 @@ mod tests {
             "shield max {shield_max}"
         );
         assert_eq!(text::<HealthValueUi>(&mut app), "65");
-        assert_eq!(text::<FlowMeterUi>(&mut app), "FLOW  80% // Overdrive 125%");
+        assert_eq!(text::<FlowMeterUi>(&mut app), "Flow  80% · overdrive 125%");
         assert_eq!(text::<AmmoCounterUi>(&mut app), "24 / 90");
-        assert_eq!(text::<FireModeUi>(&mut app), "AUTO");
-        assert_eq!(text::<WeaponNameUi>(&mut app), "PULSE RIFLE");
+        assert_eq!(text::<FireModeUi>(&mut app), "Auto");
+        assert_eq!(text::<WeaponNameUi>(&mut app), "Pulse rifle");
         assert_eq!(
             text::<CompassStripUi>(&mut app),
             "W 270\u{b0} // OBJECTIVE: CLINIC EXIT [120m]"

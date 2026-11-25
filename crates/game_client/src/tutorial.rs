@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub const PROGRESS_FILE: &str = "config/progress.json";
-const TUTORIAL_TITLE: &str = "NEURAL REBOOT // TUTORIAL";
+const TUTORIAL_TITLE: &str = "Neural reboot · tutorial";
 /// Seconds a completed step lingers before the next one.
 const STEP_PAUSE: f32 = 1.2;
 

@@ -201,7 +201,7 @@ pub fn sync_equipped(
             melee.weapon_class = class;
         }
     }
-    let name = item.base().name.to_uppercase();
+    let name = item.base().name.clone();
     let [r, g, b] = item.rarity.color();
     for (mut text, mut color) in &mut texts.p0() {
         if text.0 != name {
@@ -213,11 +213,7 @@ pub fn sync_equipped(
         }
     }
     let base = item.base();
-    let line = format!(
-        "{} // {}",
-        base.element.label().to_uppercase(),
-        base.class.label().to_uppercase()
-    );
+    let line = format!("{} · {}", base.element.label(), base.class.label());
     for mut text in &mut texts.p1() {
         if text.0 != line {
             text.0.clone_from(&line);
@@ -504,7 +500,7 @@ pub fn collect_loot(
             if rarity >= Rarity::Rare {
                 hud.banner = Some(Banner {
                     title: format!("{} WEAPON", rarity.label().to_uppercase()),
-                    subtitle: format!("{name}  //  press I"),
+                    subtitle: format!("{name}  ·  press I"),
                     tone: BannerTone::Success,
                 });
             }
@@ -584,28 +580,24 @@ pub fn draw_armory(mut contexts: EguiContexts, mut armory: ResMut<Armory>) {
     let ctx = contexts.ctx_mut();
     let armory = &mut *armory;
     egui::SidePanel::left("armory_list")
-        .exact_width(420.0)
+        .exact_width(400.0)
         .frame(
             egui::Frame::none()
                 .fill(PANEL)
-                .inner_margin(egui::Margin::same(20.0)),
+                .inner_margin(egui::Margin::same(24.0)),
         )
         .show(ctx, |ui| {
-            ui.label(
-                egui::RichText::new("ARMORY")
-                    .size(22.0)
-                    .color(TEXT)
-                    .strong(),
-            );
+            ui.label(egui::RichText::new("Armory").size(20.0).color(TEXT));
+            ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(format!(
-                    "{} / {ARMORY_CAPACITY} weapons    I / ESC close",
+                    "{} of {ARMORY_CAPACITY} weapons",
                     armory.data.weapons.len()
                 ))
                 .size(12.0)
                 .color(MUTED),
             );
-            ui.add_space(10.0);
+            ui.add_space(16.0);
             let mut order: Vec<usize> = (0..armory.data.weapons.len()).collect();
             order.sort_by(|a, b| {
                 let (wa, wb) = (&armory.data.weapons[*a], &armory.data.weapons[*b]);
@@ -613,34 +605,25 @@ pub fn draw_armory(mut contexts: EguiContexts, mut armory: ResMut<Armory>) {
                     .cmp(&wa.rarity)
                     .then(wb.base().tier.cmp(&wa.base().tier))
             });
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for i in order {
-                    let w = &armory.data.weapons[i];
-                    let base = w.base();
-                    let equipped = i == armory.data.equipped;
-                    let label = format!(
-                        "{}{}\n{}  T{}  {}",
-                        if equipped { "> " } else { "" },
-                        w.name(),
-                        base.class.label(),
-                        base.tier,
-                        base.element.label()
-                    );
-                    let text = egui::RichText::new(label)
-                        .color(color(w.rarity.color()))
-                        .size(13.0);
-                    if ui.selectable_label(armory.selected == i, text).clicked() {
-                        armory.selected = i;
+            let list_height = ui.available_height() - 40.0;
+            egui::ScrollArea::vertical()
+                .max_height(list_height)
+                .show(ui, |ui| {
+                    for i in order {
+                        if weapon_row(ui, armory, i).clicked() {
+                            armory.selected = i;
+                        }
+                        ui.add_space(4.0);
                     }
-                    ui.add_space(4.0);
-                }
-            });
+                });
+            let bottom = ui.max_rect().left_bottom() + egui::vec2(0.0, -20.0);
+            crate::lattice::keycap_row(ui.painter(), bottom, &[("I", "Close"), ("Esc", "Close")]);
         });
     egui::CentralPanel::default()
         .frame(
             egui::Frame::none()
                 .fill(egui::Color32::from_rgba_unmultiplied(4, 6, 10, 235))
-                .inner_margin(egui::Margin::same(36.0)),
+                .inner_margin(egui::Margin::same(40.0)),
         )
         .show(ctx, |ui| {
             let index = armory.selected.min(armory.data.weapons.len() - 1);
@@ -649,86 +632,153 @@ pub fn draw_armory(mut contexts: EguiContexts, mut armory: ResMut<Armory>) {
             let s = equipped_stats(&w);
             ui.label(
                 egui::RichText::new(w.name())
-                    .size(24.0)
-                    .color(color(w.rarity.color()))
-                    .strong(),
+                    .size(22.0)
+                    .color(color(w.rarity.color())),
             );
+            ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(format!(
-                    "{} {}  //  Tier {}  //  {}",
+                    "{} {}  ·  tier {}  ·  {}",
                     w.rarity.label(),
-                    base.class.label(),
+                    base.class.label().to_lowercase(),
                     base.tier,
                     base.name
                 ))
-                .size(13.0)
+                .size(12.0)
                 .color(MUTED),
             );
-            ui.add_space(12.0);
+            ui.add_space(24.0);
             let rating = 100.0 * s.damage * (1.0 + s.physical_pct / 100.0);
-            for (k, v) in [
-                ("Damage", format!("{:.0}%", s.damage * 100.0)),
-                ("Weapon rating", format!("{rating:.0}")),
-                (
-                    "Element",
-                    if base.element == Element::Physical {
-                        "Physical".to_string()
-                    } else {
-                        format!(
-                            "{} ({:.0}% of each hit)",
-                            base.element.label(),
-                            base.element_share * 100.0
-                        )
-                    },
-                ),
-                (
-                    "Critical",
-                    format!("{:.1}% for {:.0}%", s.crit_chance, s.crit_multiplier),
-                ),
-            ] {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(k).size(13.0).color(MUTED));
-                    ui.label(egui::RichText::new(v).size(13.0).color(TEXT));
+            let element = if base.element == Element::Physical {
+                "Physical".to_string()
+            } else {
+                format!(
+                    "{}, {:.0}% of each hit",
+                    base.element.label(),
+                    base.element_share * 100.0
+                )
+            };
+            egui::Grid::new("armory_stats")
+                .num_columns(2)
+                .spacing([32.0, 8.0])
+                .show(ui, |ui| {
+                    for (k, v) in [
+                        ("Damage", format!("{:.0}%", s.damage * 100.0)),
+                        ("Weapon rating", format!("{rating:.0}")),
+                        ("Element", element),
+                        (
+                            "Critical",
+                            format!("{:.1}% for {:.0}%", s.crit_chance, s.crit_multiplier),
+                        ),
+                    ] {
+                        ui.label(egui::RichText::new(k).size(13.0).color(MUTED));
+                        ui.label(egui::RichText::new(v).size(13.0).color(TEXT));
+                        ui.end_row();
+                    }
                 });
-            }
-            ui.add_space(12.0);
+            ui.add_space(24.0);
+            ui.label(egui::RichText::new("Mods").size(12.0).color(MUTED));
+            ui.add_space(8.0);
             if w.mods.is_empty() {
-                ui.label(egui::RichText::new("No mods").size(13.0).color(MUTED));
+                ui.label(egui::RichText::new("None").size(13.0).color(MUTED));
             }
             for (line, prefix) in w.mod_lines() {
-                let tint = if prefix {
-                    egui::Color32::from_rgb(140, 200, 255)
-                } else {
-                    egui::Color32::from_rgb(200, 170, 255)
-                };
-                ui.label(egui::RichText::new(line).size(14.0).color(tint));
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(if prefix { "Prefix" } else { "Suffix" })
+                            .size(11.0)
+                            .color(MUTED),
+                    );
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(line).size(13.0).color(TEXT));
+                });
+                ui.add_space(4.0);
             }
-            ui.add_space(20.0);
+            ui.add_space(32.0);
+            let equipped = index == armory.data.equipped;
+            if equipped {
+                ui.label(egui::RichText::new("Equipped").size(13.0).color(MUTED));
+                return;
+            }
             ui.horizontal(|ui| {
-                let equipped = index == armory.data.equipped;
-                if ui
-                    .add_enabled(
-                        !equipped,
-                        egui::Button::new(egui::RichText::new("EQUIP").size(15.0)),
-                    )
-                    .clicked()
-                {
+                // One primary action, one quiet secondary.
+                let equip = egui::Button::new(
+                    egui::RichText::new("Equip")
+                        .size(14.0)
+                        .color(egui::Color32::from_rgb(10, 12, 16)),
+                )
+                .fill(TEXT)
+                .rounding(8.0)
+                .min_size(egui::vec2(120.0, 36.0));
+                if ui.add(equip).clicked() {
                     armory.data.equipped = index;
                     armory.dirty = true;
                 }
-                if ui
-                    .add_enabled(
-                        !equipped,
-                        egui::Button::new(egui::RichText::new("SALVAGE").size(15.0)),
-                    )
-                    .clicked()
-                    && armory.data.salvage(index)
-                {
+                ui.add_space(16.0);
+                let salvage =
+                    egui::Button::new(egui::RichText::new("Salvage").size(14.0).color(MUTED))
+                        .frame(false);
+                if ui.add(salvage).clicked() && armory.data.salvage(index) {
                     armory.selected = armory.data.equipped;
                     armory.dirty = true;
                 }
             });
         });
+}
+
+/// One weapon in the list: rarity dot, name in its rarity colour, and a
+/// muted line with class, tier and element.
+fn weapon_row(ui: &mut egui::Ui, armory: &Armory, index: usize) -> egui::Response {
+    let w = &armory.data.weapons[index];
+    let base = w.base();
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    let selected = armory.selected == index;
+    if selected || response.hovered() {
+        let fill = if selected {
+            egui::Color32::from_rgb(20, 24, 30)
+        } else {
+            egui::Color32::from_rgb(14, 17, 22)
+        };
+        painter.rect(
+            rect,
+            8.0,
+            fill,
+            egui::Stroke::new(1.0, TEXT.gamma_multiply(0.08)),
+        );
+    }
+    let rarity = color(w.rarity.color());
+    painter.circle_filled(rect.left_center() + egui::vec2(14.0, -8.0), 4.0, rarity);
+    painter.text(
+        rect.left_top() + egui::vec2(28.0, 8.0),
+        egui::Align2::LEFT_TOP,
+        w.name(),
+        egui::FontId::monospace(13.0),
+        rarity,
+    );
+    painter.text(
+        rect.left_top() + egui::vec2(28.0, 28.0),
+        egui::Align2::LEFT_TOP,
+        format!(
+            "{}  ·  tier {}  ·  {}",
+            base.class.label(),
+            base.tier,
+            base.element.label().to_lowercase()
+        ),
+        egui::FontId::monospace(11.0),
+        MUTED,
+    );
+    if index == armory.data.equipped {
+        painter.text(
+            rect.right_top() + egui::vec2(-12.0, 8.0),
+            egui::Align2::RIGHT_TOP,
+            "Equipped",
+            egui::FontId::monospace(11.0),
+            MUTED,
+        );
+    }
+    response
 }
 
 pub struct ArmoryPlugin;

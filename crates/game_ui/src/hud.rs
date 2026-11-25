@@ -26,7 +26,7 @@ pub const PANEL_SOLID: Color = Color::srgb(0.02, 0.035, 0.055);
 pub const BAR_TRACK: Color = Color::srgba(1.0, 1.0, 1.0, 0.07);
 pub const TEXT: Color = Color::srgba(0.93, 0.96, 1.0, 0.95);
 pub const MUTED: Color = Color::srgba(0.75, 0.84, 0.95, 0.55);
-pub const HAIRLINE: Color = Color::srgba(0.0, 0.9, 1.0, 0.3);
+pub const HAIRLINE: Color = Color::srgba(0.93, 0.96, 1.0, 0.1);
 pub const DANGER: Color = Color::srgb(1.0, 0.27, 0.33);
 const HEALTH_OK: Color = Color::srgb(0.9, 0.95, 1.0);
 /// Damage trail behind shield and health fills.
@@ -75,7 +75,7 @@ pub struct OperativeName(pub String);
 
 impl Default for OperativeName {
     fn default() -> Self {
-        Self("OPERATIVE".into())
+        Self("Operative".into())
     }
 }
 
@@ -164,11 +164,11 @@ pub fn write_vital_value(out: &mut String, value: f32) {
 
 pub fn flow_tier_label(out: &mut String, tier: FlowTier, overdrive_multiplier: f32) {
     match tier {
-        FlowTier::Base => out.push_str("Base"),
-        FlowTier::Tier1 => out.push_str("Tier 1"),
-        FlowTier::Tier2 => out.push_str("Tier 2"),
+        FlowTier::Base => out.push_str("base"),
+        FlowTier::Tier1 => out.push_str("tier 1"),
+        FlowTier::Tier2 => out.push_str("tier 2"),
         FlowTier::Overdrive => {
-            let _ = write!(out, "Overdrive {:.0}%", overdrive_multiplier * 100.0);
+            let _ = write!(out, "overdrive {:.0}%", overdrive_multiplier * 100.0);
         }
     }
 }
@@ -176,42 +176,42 @@ pub fn flow_tier_label(out: &mut String, tier: FlowTier, overdrive_multiplier: f
 pub fn write_flow_text(out: &mut String, flow: f32, overdrive_multiplier: f32) {
     out.clear();
     let percent = (fill_fraction(flow, FLOW_MAX) * 100.0).round() as u32;
-    let _ = write!(out, "FLOW {percent:>3}% // ");
+    let _ = write!(out, "Flow {percent:>3}% · ");
     flow_tier_label(out, FlowTier::from_flow(flow), overdrive_multiplier);
 }
 
 pub fn fire_mode_label(archetype: RangedWeaponArchetype) -> &'static str {
     match archetype {
-        RangedWeaponArchetype::KineticPistol | RangedWeaponArchetype::TechSniperRifle => "SEMI",
+        RangedWeaponArchetype::KineticPistol | RangedWeaponArchetype::TechSniperRifle => "Semi",
         RangedWeaponArchetype::SmartSubmachineGun | RangedWeaponArchetype::PulseAssaultRifle => {
-            "AUTO"
+            "Auto"
         }
-        RangedWeaponArchetype::PlasmaShotgun => "PUMP",
-        RangedWeaponArchetype::ChargeRailgun => "CHARGE",
+        RangedWeaponArchetype::PlasmaShotgun => "Pump",
+        RangedWeaponArchetype::ChargeRailgun => "Charge",
     }
 }
 
 pub fn write_ammo_text(out: &mut String, weapon: Option<&BallisticProfile>) {
     out.clear();
     match weapon {
-        Some(w) if w.reload_timer > 0.0 => out.push_str("RELOADING"),
+        Some(w) if w.reload_timer > 0.0 => out.push_str("Reloading"),
         Some(w) => {
             let _ = write!(out, "{} / {}", w.current_ammo, w.reserve_ammo);
         }
-        None => out.push_str("3-HIT COMBO"),
+        None => out.push_str("3-hit combo"),
     }
 }
 
 /// Name shown on the weapon card.
 pub fn weapon_display_name(weapon: Option<&BallisticProfile>) -> &'static str {
     match weapon.map(|w| w.archetype) {
-        None => "CYBER-KATANA",
-        Some(RangedWeaponArchetype::KineticPistol) => "KINETIC PISTOL",
-        Some(RangedWeaponArchetype::SmartSubmachineGun) => "SMART SMG",
-        Some(RangedWeaponArchetype::PulseAssaultRifle) => "PULSE RIFLE",
-        Some(RangedWeaponArchetype::PlasmaShotgun) => "PLASMA SHOTGUN",
-        Some(RangedWeaponArchetype::TechSniperRifle) => "TECH SNIPER",
-        Some(RangedWeaponArchetype::ChargeRailgun) => "CHARGE RAILGUN",
+        None => "Cyber-katana",
+        Some(RangedWeaponArchetype::KineticPistol) => "Kinetic pistol",
+        Some(RangedWeaponArchetype::SmartSubmachineGun) => "Smart SMG",
+        Some(RangedWeaponArchetype::PulseAssaultRifle) => "Pulse rifle",
+        Some(RangedWeaponArchetype::PlasmaShotgun) => "Plasma shotgun",
+        Some(RangedWeaponArchetype::TechSniperRifle) => "Tech sniper",
+        Some(RangedWeaponArchetype::ChargeRailgun) => "Charge railgun",
     }
 }
 
@@ -557,7 +557,7 @@ pub fn setup_cyberpunk_hud(
                 bottom.spawn(card(CYAN)).with_children(|vitals| {
                     vitals.spawn((
                         OperativeNameUi,
-                        hud_text(&title, "OPERATIVE", 15.0, TEXT),
+                        hud_text(&title, "Operative", 15.0, TEXT),
                         Node {
                             margin: UiRect::bottom(Val::Px(6.0)),
                             ..default()
@@ -566,7 +566,7 @@ pub fn setup_cyberpunk_hud(
                     vital_row(
                         vitals,
                         &font,
-                        "SHIELD",
+                        "Shield",
                         (HudBarKind::Shield, CYAN),
                         HudBarKind::ShieldTrail,
                         (hud_text(&font, "0", 15.0, CYAN), HealthShieldBarUi),
@@ -574,7 +574,7 @@ pub fn setup_cyberpunk_hud(
                     vital_row(
                         vitals,
                         &font,
-                        "HEALTH",
+                        "Health",
                         (HudBarKind::Health, HEALTH_OK),
                         HudBarKind::HealthTrail,
                         (hud_text(&font, "0", 15.0, TEXT), HealthValueUi),
@@ -610,14 +610,14 @@ pub fn setup_cyberpunk_hud(
                                 ));
                             });
                             row.spawn((
-                                hud_text(&font, "FLOW   0% // Base", 11.0, AMBER),
+                                hud_text(&font, "Flow   0% · base", 11.0, AMBER),
                                 FlowMeterUi,
                             ));
                         });
                 });
                 bottom.spawn(card(AMBER)).with_children(|weapon| {
-                    weapon.spawn((hud_text(&font, "MELEE", 11.0, MUTED), FireModeUi));
-                    weapon.spawn((hud_text(&title, "CYBER-KATANA", 26.0, TEXT), WeaponNameUi));
+                    weapon.spawn((hud_text(&font, "Melee", 11.0, MUTED), FireModeUi));
+                    weapon.spawn((hud_text(&title, "Cyber-katana", 26.0, TEXT), WeaponNameUi));
                     weapon
                         .spawn(Node {
                             align_items: AlignItems::Center,
@@ -638,7 +638,7 @@ pub fn setup_cyberpunk_hud(
                                 ));
                             }
                             row.spawn((
-                                hud_text(&font, "3-HIT COMBO", 12.0, AMBER),
+                                hud_text(&font, "3-hit combo", 12.0, AMBER),
                                 AmmoCounterUi,
                                 Node {
                                     margin: UiRect::left(Val::Px(6.0)),
@@ -792,7 +792,7 @@ pub fn update_ammo_counter(
     }
     for mut text in &mut texts.p2() {
         weapon
-            .map_or("MELEE", |w| fire_mode_label(w.archetype))
+            .map_or("Melee", |w| fire_mode_label(w.archetype))
             .clone_into(&mut text.0);
     }
     *shown = Some(key);
@@ -864,7 +864,7 @@ pub fn update_operative_name(
     let Some(name) = name.filter(|n| n.is_changed()) else {
         return;
     };
-    let shown = name.0.to_uppercase();
+    let shown = name.0.clone();
     for mut text in &mut texts {
         if text.0 != shown {
             text.0.clone_from(&shown);
@@ -1055,10 +1055,10 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "FLOW   0% // Base",
-                "FLOW  30% // Tier 1",
-                "FLOW  60% // Tier 2",
-                "FLOW  90% // Overdrive 125%"
+                "Flow   0% · base",
+                "Flow  30% · tier 1",
+                "Flow  60% · tier 2",
+                "Flow  90% · overdrive 125%"
             ]
         );
     }
@@ -1077,20 +1077,20 @@ mod tests {
     fn ammo_text() {
         let mut out = String::new();
         write_ammo_text(&mut out, None);
-        assert_eq!(out, "3-HIT COMBO");
-        assert_eq!(weapon_display_name(None), "CYBER-KATANA");
+        assert_eq!(out, "3-hit combo");
+        assert_eq!(weapon_display_name(None), "Cyber-katana");
         let mut smg = BallisticProfile::for_archetype(RangedWeaponArchetype::SmartSubmachineGun);
         smg.current_ammo = 30;
         smg.reserve_ammo = 120;
         write_ammo_text(&mut out, Some(&smg));
         assert_eq!(out, "30 / 120");
-        assert_eq!(weapon_display_name(Some(&smg)), "SMART SMG");
+        assert_eq!(weapon_display_name(Some(&smg)), "Smart SMG");
         smg.reload_timer = 1.2;
         write_ammo_text(&mut out, Some(&smg));
-        assert_eq!(out, "RELOADING");
+        assert_eq!(out, "Reloading");
         assert_eq!(
             fire_mode_label(RangedWeaponArchetype::ChargeRailgun),
-            "CHARGE"
+            "Charge"
         );
     }
 

@@ -696,7 +696,7 @@ impl WeaponItem {
                     a.wrapping_mul(31).wrapping_add(u64::from(*id))
                 }));
                 format!(
-                    "{} {}  //  {base}",
+                    "{} {}  ·  {base}",
                     FIRST[(h % 12) as usize],
                     SECOND[((h >> 8) % 12) as usize]
                 )

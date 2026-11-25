@@ -110,9 +110,9 @@ const TAG_RANGE: f32 = 45.0;
 fn tag_text(look: &CharacterAppearance) -> String {
     let card = &look.card;
     if card.title.is_empty() {
-        card.callsign.to_uppercase()
+        card.callsign.clone()
     } else {
-        format!("{}\n{}", card.callsign.to_uppercase(), card.title)
+        format!("{}\n{}", card.callsign, card.title)
     }
 }
 
@@ -229,13 +229,9 @@ mod tests {
         let mut look = CharacterAppearance::preset(Preset::Hana);
         look.card.callsign = "kite".into();
         look.card.title = "Night Runner".into();
-        assert_eq!(
-            tag_text(&look),
-            "KITE
-Night Runner"
-        );
+        assert_eq!(tag_text(&look), "kite\nNight Runner");
         look.card.title.clear();
-        assert_eq!(tag_text(&look), "KITE");
+        assert_eq!(tag_text(&look), "kite");
     }
 
     #[test]

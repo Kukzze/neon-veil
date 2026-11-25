@@ -42,7 +42,8 @@ pub fn style() -> (egui::FontDefinitions, egui::Visuals) {
     v.override_text_color = Some(TEXT);
     v.window_fill = PANEL;
     v.panel_fill = PANEL;
-    v.window_stroke = egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.45));
+    // Neutral hairlines: the accent is kept for focus and selection.
+    v.window_stroke = egui::Stroke::new(1.0, TEXT.gamma_multiply(0.1));
     v.window_rounding = egui::Rounding::ZERO;
     v.menu_rounding = egui::Rounding::ZERO;
     v.window_shadow = egui::epaint::Shadow::NONE;
@@ -65,7 +66,7 @@ pub fn style() -> (egui::FontDefinitions, egui::Visuals) {
     }
     v.widgets.noninteractive.bg_stroke =
         egui::Stroke::new(1.0, egui::Color32::from_rgb(28, 40, 52));
-    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ACCENT.gamma_multiply(0.6));
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, TEXT.gamma_multiply(0.24));
     v.widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
     (fonts, v)
 }
