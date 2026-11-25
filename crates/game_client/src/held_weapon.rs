@@ -161,9 +161,47 @@ pub fn weapon_parts(class: WeaponClass) -> Vec<Part> {
     }
 }
 
-/// File stem of each class's model in `assets/weapons` (built by
-/// `tools/blender/build_weapons.py`).
-pub fn model_file(class: WeaponClass) -> &'static str {
+/// The model of one weapon base in `assets/weapons` (built by
+/// `tools/blender/build_weapons.py`): its class and which of the class's
+/// five models it is.
+pub fn model_path(class: WeaponClass, model: usize) -> String {
+    format!("weapons/{}_{}.glb", class_stem(class), model.min(4))
+}
+
+/// How each maker finishes its metal: colour multiplier, metallic cap and
+/// roughness scale (in the arsenal's maker order).
+pub const MAKER_FINISHES: [([f32; 3], f32, f32); 10] = [
+    ([1.0, 1.0, 1.0], 1.0, 1.0),     // Hoshida: plain steel
+    ([0.72, 0.84, 1.15], 1.0, 0.9),  // Vantek: blued steel
+    ([0.42, 0.4, 0.38], 1.0, 1.35),  // Kurogane Works: blackened iron
+    ([0.55, 0.44, 0.72], 1.0, 0.85), // Sable Arms: violet anodise
+    ([2.1, 2.1, 2.2], 0.1, 1.5),     // Neuroforge: white ceramic
+    ([1.3, 1.45, 1.65], 1.0, 0.7),   // Tessera: frosted silver
+    ([1.45, 0.85, 0.52], 1.0, 0.95), // Okami Dynamics: copper bronze
+    ([1.25, 1.05, 0.66], 1.0, 0.9),  // Rook & Vale: gilded gunmetal
+    ([0.72, 0.98, 0.58], 1.0, 1.1),  // Helix Armory: olive drab
+    ([1.65, 1.7, 1.75], 1.0, 0.35),  // Mirrorline: chrome
+];
+
+/// A model's material in a maker's finish.
+pub fn finished(source: &StandardMaterial, maker: usize) -> StandardMaterial {
+    let ([r, g, b], metal_cap, rough) = MAKER_FINISHES[maker % MAKER_FINISHES.len()];
+    let base = source.base_color.to_linear();
+    StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::new(
+            (base.red * r).min(1.0),
+            (base.green * g).min(1.0),
+            (base.blue * b).min(1.0),
+            base.alpha,
+        )),
+        metallic: source.metallic.min(metal_cap),
+        perceptual_roughness: (source.perceptual_roughness * rough).clamp(0.08, 1.0),
+        ..source.clone()
+    }
+}
+
+/// File-name stem of a class.
+pub fn class_stem(class: WeaponClass) -> &'static str {
     match class {
         WeaponClass::Katana => "katana",
         WeaponClass::DualBlades => "dual_blades",
@@ -353,37 +391,31 @@ pub fn grip_transform(
 /// stripped builds fall back to the part models).
 #[derive(Resource)]
 pub struct WeaponModels {
-    scenes: Option<Vec<Handle<Scene>>>,
+    available: bool,
 }
 
 impl WeaponModels {
-    pub fn scene(&self, class: WeaponClass) -> Option<Handle<Scene>> {
-        let index = WeaponClass::ALL.iter().position(|c| *c == class)?;
-        self.scenes.as_ref()?.get(index).cloned()
+    /// The scene for a weapon base (loaded on first use, then cached by
+    /// the asset server).
+    pub fn scene(
+        &self,
+        assets: Option<&AssetServer>,
+        class: WeaponClass,
+        model: usize,
+    ) -> Option<Handle<Scene>> {
+        let assets = assets.filter(|_| self.available)?;
+        Some(assets.load(GltfAssetLabel::Scene(0).from_asset(model_path(class, model))))
     }
 }
 
 impl FromWorld for WeaponModels {
     fn from_world(world: &mut World) -> Self {
         let root = crate::app::asset_root();
-        let present = WeaponClass::ALL.iter().all(|c| {
-            root.join(format!("weapons/{}.glb", model_file(*c)))
-                .exists()
-        });
-        let Some(assets) = world.get_resource::<AssetServer>().filter(|_| present) else {
-            return Self { scenes: None };
-        };
-        let scenes = WeaponClass::ALL
-            .iter()
-            .map(|c| {
-                assets.load(
-                    GltfAssetLabel::Scene(0).from_asset(format!("weapons/{}.glb", model_file(*c))),
-                )
-            })
-            .collect();
-        Self {
-            scenes: Some(scenes),
-        }
+        let available = world.get_resource::<AssetServer>().is_some()
+            && WeaponClass::ALL
+                .iter()
+                .all(|c| (0..5).all(|m| root.join(model_path(*c, m)).exists()));
+        Self { available }
     }
 }
 
@@ -391,6 +423,8 @@ impl FromWorld for WeaponModels {
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct HeldWeaponModel {
     pub element: usize,
+    /// The maker, whose finish the metal takes.
+    pub maker: usize,
     /// The operative body holding it.
     pub body: Entity,
     pub hand: Hand,
@@ -533,6 +567,7 @@ pub fn hold_weapon(
     armory: Res<Armory>,
     assets: Res<HeldWeaponAssets>,
     models: Res<WeaponModels>,
+    server: Option<Res<AssetServer>>,
     players: Query<Entity, With<LocalPredictedPlayer>>,
     avatars: Query<&OperativeAvatar>,
     bodies: Query<(Entity, &Parent), With<OperativeBody>>,
@@ -559,7 +594,7 @@ pub fn hold_weapon(
         commands.entity(entity).despawn_recursive();
     }
     let base = item.base();
-    if let Some(scene) = models.scene(base.class) {
+    if let Some(scene) = models.scene(server.as_deref(), base.class, base.model_index()) {
         for &hand in model_hands(base.class) {
             let hold = model_hold(base.class);
             let mut model = commands.spawn((
@@ -570,6 +605,7 @@ pub fn hold_weapon(
                 },
                 HeldWeaponModel {
                     element: base.element.index(),
+                    maker: base.maker_index(),
                     body,
                     hand,
                     hold,
@@ -628,12 +664,15 @@ pub fn hold_weapon(
     }
 }
 
-/// Swaps each model's emissive material for the element's flowing glow
-/// (other materials keep the model's own steel, brass and wrap).
+/// Swaps each model's emissive material for the element's flowing glow,
+/// and gives its steel, brass and wrap the maker's finish.
 pub fn tint_weapon_models(
     mut commands: Commands,
     assets: Res<HeldWeaponAssets>,
-    materials: Res<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut finishes: Local<
+        std::collections::HashMap<(AssetId<StandardMaterial>, usize), Handle<StandardMaterial>>,
+    >,
     models: Query<(Entity, &HeldWeaponModel)>,
     children: Query<&Children>,
     mut meshes: Query<&mut MeshMaterial3d<StandardMaterial>, Without<WeaponMaterialChecked>>,
@@ -652,6 +691,14 @@ pub fn tint_weapon_models(
             if e.red + e.green + e.blue > 0.01 {
                 material.0 = assets.flows[model.element].clone();
                 checked.insert(NotShadowCaster);
+            } else {
+                let key = (material.0.id(), model.maker);
+                let source = source.clone();
+                let handle = finishes
+                    .entry(key)
+                    .or_insert_with(|| materials.add(finished(&source, model.maker)))
+                    .clone();
+                material.0 = handle;
             }
         }
     }
@@ -926,14 +973,34 @@ mod tests {
     }
 
     #[test]
-    fn every_class_has_a_built_model_file() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/weapons");
-        let mut stems: Vec<_> = WeaponClass::ALL.iter().map(|c| model_file(*c)).collect();
-        for stem in &stems {
-            assert!(dir.join(format!("{stem}.glb")).exists(), "{stem}.glb");
+    fn all_500_bases_have_a_model_and_a_distinct_look() {
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let mut looks = std::collections::HashSet::new();
+        for base in game_rpg::weapon_bases() {
+            let path = model_path(base.class, base.model_index());
+            assert!(assets.join(&path).exists(), "{path} for {}", base.name);
+            looks.insert((path, base.maker_index()));
         }
-        stems.dedup();
-        assert_eq!(stems.len(), WeaponClass::ALL.len());
+        // Fifty shapes times ten maker finishes.
+        assert_eq!(looks.len(), 500);
+        let steel = StandardMaterial {
+            base_color: Color::srgb(0.46, 0.48, 0.51),
+            metallic: 0.95,
+            perceptual_roughness: 0.22,
+            ..default()
+        };
+        let finishes: std::collections::HashSet<_> = (0..MAKER_FINISHES.len())
+            .map(|m| {
+                let f = finished(&steel, m);
+                let c = f.base_color.to_linear();
+                [c.red, c.green, c.blue, f.metallic, f.perceptual_roughness].map(f32::to_bits)
+            })
+            .collect();
+        assert_eq!(
+            finishes.len(),
+            MAKER_FINISHES.len(),
+            "every maker looks different"
+        );
         assert_eq!(model_hands(WeaponClass::DualBlades).len(), 2);
         assert_eq!(model_hands(WeaponClass::Katana), &[Hand::Right]);
     }

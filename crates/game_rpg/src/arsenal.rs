@@ -197,6 +197,21 @@ pub struct WeaponBase {
     pub element_share: f32,
 }
 
+/// Bases per class: every maker makes every model.
+pub const BASES_PER_CLASS: usize = MAKERS.len() * 5;
+
+impl WeaponBase {
+    /// Which maker (0..10) made it; sets its finish.
+    pub fn maker_index(&self) -> usize {
+        usize::from(self.id) % BASES_PER_CLASS / 5
+    }
+
+    /// Which of its class's five models (0..5) it is; sets its shape.
+    pub fn model_index(&self) -> usize {
+        usize::from(self.id) % 5
+    }
+}
+
 /// Every weapon base (500).
 pub fn weapon_bases() -> &'static [WeaponBase] {
     static BASES: std::sync::OnceLock<Vec<WeaponBase>> = std::sync::OnceLock::new();
@@ -839,6 +854,27 @@ impl WeaponStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_maker_and_model_pairing_is_one_base() {
+        let bases = weapon_bases();
+        let mut seen = std::collections::HashSet::new();
+        for b in bases {
+            assert!(b.maker_index() < MAKERS.len() && b.model_index() < 5);
+            assert!(
+                seen.insert((b.class, b.maker_index(), b.model_index())),
+                "{}",
+                b.name
+            );
+            assert!(b.name.starts_with(MAKERS[b.maker_index()].0), "{}", b.name);
+            assert!(
+                b.name.ends_with(b.class.models()[b.model_index()]),
+                "{}",
+                b.name
+            );
+        }
+        assert_eq!(seen.len(), 500);
+    }
     use std::collections::HashSet;
 
     #[test]
