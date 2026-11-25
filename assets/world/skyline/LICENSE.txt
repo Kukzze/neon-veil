@@ -1,0 +1,5 @@
+Harbour skyline (harbour_skyline.glb)
+
+Converted from the "Sydney City Skyline" scene, a royalty-free model
+supplied by the project owner. Decimated, with 2048 px textures, for use
+as a distant backdrop.

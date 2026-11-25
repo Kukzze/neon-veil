@@ -178,6 +178,12 @@ fn setup_night_scene(
                 hdr: true,
                 ..default()
             },
+            // Far enough for the harbour skyline on the horizon (reverse-Z,
+            // so depth precision does not suffer).
+            Projection::Perspective(PerspectiveProjection {
+                far: 12_000.0,
+                ..default()
+            }),
             Tonemapping::AgX,
             DebandDither::Enabled,
             // Deferred shading with screen-space reflections: the wet asphalt

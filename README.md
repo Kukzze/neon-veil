@@ -186,6 +186,7 @@ Third-party assets, all CC0 unless noted:
 
 - Human base mesh, morph targets, rig, hair, brows, lashes, clothes and skin detail: [MakeHuman](http://www.makehumancommunity.org) (CC0).
 - Street and facade textures: [Poly Haven](https://polyhaven.com) (CC0).
+- Distant harbour skyline: converted from the royalty-free "Sydney City Skyline" model.
 - Fonts: JetBrains Mono and Rajdhani (SIL Open Font License).
 
 © Cutting Onion Studios. All rights reserved.

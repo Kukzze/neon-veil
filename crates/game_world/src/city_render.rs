@@ -426,14 +426,71 @@ pub fn stream_city(
     }
 }
 
+/// The harbour skyline on the horizon past the north edge (a scanned city,
+/// seen across the water at night).
+const SKYLINE_SCENE: &str = "world/skyline/harbour_skyline.glb";
+/// Model units to metres, and where its centre sits.
+const SKYLINE_SCALE: f32 = 220.0;
+const SKYLINE_AT: Vec3 = Vec3::new(-1067.0, -35.0, -5315.0);
+
+/// The skyline's glTF, until its materials are tuned for night.
+#[derive(Resource, Debug)]
+pub struct SkylineAsset(pub Handle<bevy::gltf::Gltf>, pub bool);
+
+pub fn spawn_skyline(mut commands: Commands, assets: Option<Res<AssetServer>>) {
+    let Some(assets) = assets else {
+        return;
+    };
+    commands.spawn((
+        Name::new("Harbour Skyline"),
+        CityPiece,
+        SceneRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(SKYLINE_SCENE))),
+        Transform::from_translation(SKYLINE_AT).with_scale(Vec3::splat(SKYLINE_SCALE)),
+    ));
+    commands.insert_resource(SkylineAsset(assets.load(SKYLINE_SCENE), false));
+}
+
+/// Turns the scanned daylight textures into a dim city at dusk that the
+/// fog does not swallow.
+pub fn tune_skyline(
+    mut skyline: Option<ResMut<SkylineAsset>>,
+    gltfs: Option<Res<Assets<bevy::gltf::Gltf>>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let (Some(skyline), Some(gltfs)) = (skyline.as_mut(), gltfs) else {
+        return;
+    };
+    if skyline.1 {
+        return;
+    }
+    let Some(gltf) = gltfs.get(&skyline.0) else {
+        return;
+    };
+    for handle in &gltf.materials {
+        if let Some(m) = materials.get_mut(handle) {
+            m.unlit = true;
+            m.fog_enabled = false;
+            // A scanned surface: seen from street level some faces point away.
+            m.double_sided = true;
+            m.cull_mode = None;
+            m.alpha_mode = AlphaMode::Opaque;
+            // The deferred lighting pass fogs every pixel; forward honours
+            // the material's fog flag.
+            m.opaque_render_method = bevy::pbr::OpaqueRendererMethod::Forward;
+            m.base_color = Color::srgb(0.55, 0.58, 0.68);
+        }
+    }
+    skyline.1 = true;
+}
+
 /// Streams the city in around whichever 3D camera is active.
 pub struct CityPlugin;
 
 impl Plugin for CityPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CityStream>()
-            .add_systems(Startup, setup_city_palette)
-            .add_systems(Update, stream_city);
+            .add_systems(Startup, (setup_city_palette, spawn_skyline))
+            .add_systems(Update, (stream_city, tune_skyline));
     }
 }
 
