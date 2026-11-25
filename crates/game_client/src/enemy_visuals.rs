@@ -388,6 +388,13 @@ pub struct GearMount {
     /// Spin about local Y, radians per second (rotary barrels).
     pub spin: f32,
     pub angle: f32,
+    /// Metres further along the bone (from `to` towards beyond), before
+    /// the body's scale: hand-held weapons extend past the fist.
+    pub reach: f32,
+    /// How far the line leans towards the body's forward (0 follows the
+    /// bone): weapons in a hanging hand rest pointing ahead, not into the
+    /// ground.
+    pub lean: f32,
 }
 
 impl GearMount {
@@ -402,7 +409,24 @@ impl GearMount {
             shape: Transform::IDENTITY,
             spin: 0.0,
             angle: 0.0,
+            reach: 0.0,
+            lean: 0.0,
         }
+    }
+
+    pub fn lean(mut self, lean: f32) -> Self {
+        self.lean = lean;
+        self
+    }
+
+    pub fn reach(mut self, metres: f32) -> Self {
+        self.reach = metres;
+        self
+    }
+
+    pub fn turned(mut self, rotation: Quat) -> Self {
+        self.shape.rotation = rotation;
+        self
     }
 
     pub fn offset(mut self, offset: Vec3) -> Self {
@@ -429,9 +453,12 @@ impl GearMount {
 /// World transform of a mount, given its two joints and the body's frame.
 pub fn mount_transform(mount: &GearMount, a: Vec3, b: Vec3, body: &GlobalTransform) -> Transform {
     let (scale, facing, _) = body.to_scale_rotation_translation();
-    let point = a.lerp(b, mount.along);
+    let bone = (b - a).normalize_or(Vec3::Y);
+    let forward = facing * Vec3::Z;
+    let dir = (bone + forward * mount.lean).normalize_or(bone);
+    let point = a.lerp(b, mount.along) + dir * mount.reach * scale.y;
     let base = if mount.align {
-        Quat::from_rotation_arc(Vec3::Y, (b - a).normalize_or(Vec3::Y))
+        Quat::from_rotation_arc(Vec3::Y, dir)
     } else {
         facing
     };

@@ -218,7 +218,13 @@ type TargetQuery<'a> = (
     Option<&'a ParkourState>,
     Option<&'a FlowState>,
     Option<&'a RecoilSpring>,
+    Option<&'a OriginAtFeet>,
 );
+
+/// The target's origin is at its feet (networked players), not at the
+/// centre of a capsule (physics-driven characters).
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OriginAtFeet;
 
 /// Places every rig camera relative to its target.
 pub fn update_camera_rig(
@@ -240,7 +246,8 @@ pub fn update_camera_rig(
         let Some(target) = rig.target else {
             continue;
         };
-        let Ok((target_transform, view, velocity, state, flow, recoil)) = targets.get(target)
+        let Ok((target_transform, view, velocity, state, flow, recoil, at_feet)) =
+            targets.get(target)
         else {
             continue;
         };
@@ -274,8 +281,14 @@ pub fn update_camera_rig(
                 );
                 rig.head_bob_phase = phase;
                 rig.head_bob_weight = weight;
+                // The eye stands on the real feet, wherever the origin is.
+                let true_feet = if at_feet.is_some() {
+                    target_transform.translation
+                } else {
+                    feet
+                };
                 fpp::eye_position(
-                    feet,
+                    true_feet,
                     rig.yaw,
                     rig.fpp_eye_offset,
                     fpp::head_bob_offset(phase, weight),

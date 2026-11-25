@@ -17,7 +17,7 @@ use game_economy::EconomyPlugin;
 use game_input::GameInputPlugin;
 use game_parkour::ParkourPlugin;
 use game_rpg::RpgPlugin;
-use game_server::{spawn_local_server, LocalServerHandle, LoopbackNetwork};
+use game_server::{LocalServerHandle, LoopbackNetwork};
 use game_steam::SteamworksPlugin;
 use game_ui::UiPlugin;
 use game_world::{GreyboxGymPlugin, WorldPlugin};
@@ -63,6 +63,8 @@ pub struct ClientOptions {
     pub showcase: bool,
     /// Equip this weapon base for the session without saving it.
     pub weapon: Option<u16>,
+    /// Offline spawn point (default the start of Kuroshio Avenue).
+    pub spawn_at: (i32, i32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +92,17 @@ where
             "--creator" => options.creator = true,
             "--tutorial" => options.tutorial = true,
             "--showcase" => options.showcase = true,
+            "--spawn-at" => {
+                let spec = args.next().ok_or("--spawn-at needs <x>,<z> in metres")?;
+                let (x, z) = spec
+                    .as_ref()
+                    .split_once(',')
+                    .and_then(|(x, z)| {
+                        Some((x.trim().parse::<i32>().ok()?, z.trim().parse::<i32>().ok()?))
+                    })
+                    .ok_or_else(|| format!("bad --spawn-at {:?}", spec.as_ref()))?;
+                options.spawn_at = (x, z);
+            }
             "--weapon" => {
                 let id = args.next().ok_or("--weapon needs a weapon base id")?;
                 options.weapon = Some(
@@ -216,11 +229,11 @@ pub fn add_gameplay_plugins(app: &mut App) {
 }
 
 /// Installs the transport for `session`; offline starts the local server.
-pub fn install_session(app: &mut App, session: SessionMode) -> anyhow::Result<()> {
+pub fn install_session(app: &mut App, session: SessionMode, spawn: Vec3) -> anyhow::Result<()> {
     match session {
         SessionMode::Offline => {
             let network = LoopbackNetwork::perfect();
-            let server = spawn_local_server(&network);
+            let server = game_server::spawn_local_server_at(&network, spawn);
             app.insert_resource(ClientTransportResource::new(network.connect()))
                 .insert_resource(OfflineSession { network, server });
         }
@@ -258,7 +271,11 @@ pub fn build_headless_client_app(options: ClientOptions) -> anyhow::Result<App> 
     if options.greybox {
         add_once(&mut app, GreyboxGymPlugin);
     }
-    install_session(&mut app, options.session)?;
+    install_session(
+        &mut app,
+        options.session,
+        Vec3::new(options.spawn_at.0 as f32, 0.0, options.spawn_at.1 as f32),
+    )?;
     Ok(app)
 }
 
@@ -350,6 +367,8 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             crate::lattice::LatticePlugin,
             crate::armory::ArmoryPlugin,
             crate::weapon_look::WeaponLookPlugin,
+            crate::held_weapon::HeldWeaponPlugin,
+            crate::patrols::PatrolPlugin,
             crate::creator::CreatorPlugin {
                 start,
                 face_view: options.creator_face,
@@ -373,7 +392,11 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
         app.insert_resource(capture)
             .add_systems(Update, capture_frame_and_exit);
     }
-    install_session(&mut app, options.session)?;
+    install_session(
+        &mut app,
+        options.session,
+        Vec3::new(options.spawn_at.0 as f32, 0.0, options.spawn_at.1 as f32),
+    )?;
     Ok(app)
 }
 
@@ -495,7 +518,8 @@ mod tests {
                 preset: None,
                 tutorial: false,
                 showcase: false,
-                weapon: None
+                weapon: None,
+                spawn_at: (0, 0)
             })
         );
         assert_eq!(

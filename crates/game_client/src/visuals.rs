@@ -109,10 +109,6 @@ pub fn district_atmosphere(position: Vec3) -> AtmosphereState {
 /// Meshes and materials for the operative's katana and slash trail.
 #[derive(Resource)]
 pub struct AvatarAssets {
-    armor: Handle<StandardMaterial>,
-    blade: Handle<StandardMaterial>,
-    sheath: Handle<Mesh>,
-    blade_edge: Handle<Mesh>,
     slash_arc: Handle<Mesh>,
     slash: Handle<StandardMaterial>,
 }
@@ -120,20 +116,6 @@ pub struct AvatarAssets {
 impl AvatarAssets {
     fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
         Self {
-            armor: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.16, 0.17, 0.2),
-                perceptual_roughness: 0.38,
-                metallic: 0.6,
-                ..default()
-            }),
-            blade: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.0, 0.2, 0.3),
-                perceptual_roughness: 0.3,
-                emissive: LinearRgba::rgb(0.0, 4.0, 6.0),
-                ..default()
-            }),
-            sheath: meshes.add(Cuboid::new(0.05, 1.0, 0.035)),
-            blade_edge: meshes.add(Cuboid::new(0.015, 0.95, 0.01)),
             slash_arc: meshes.add(crate::combat_fx::slash_arc_mesh(
                 0.55,
                 1.45,
@@ -370,6 +352,8 @@ fn attach_local_player_presentation(
             rig.target = Some(player);
         }
         commands.entity(player).insert((
+            // Simulated positions are the feet.
+            game_camera::OriginAtFeet,
             local_player_input_bundle(default_input_map()),
             Health::new(PLAYER_MAX_HEALTH),
             Shields::default(),
@@ -417,26 +401,6 @@ pub fn spawn_operative_avatar(
                 Visibility::default(),
             ))
             .with_children(|body| {
-                let blade_tilt = Quat::from_rotation_z(-0.55);
-                body.spawn(part(
-                    &a.sheath,
-                    &a.armor,
-                    Transform::from_xyz(0.08, 0.26, 0.15).with_rotation(blade_tilt),
-                ));
-                body.spawn((
-                    SheathedBlade,
-                    part(
-                        &a.blade_edge,
-                        &a.blade,
-                        Transform::from_xyz(0.08, 0.26, 0.17).with_rotation(blade_tilt),
-                    ),
-                ));
-                body.spawn((
-                    crate::combat_fx::DrawnKatana { source },
-                    part(&a.blade_edge, &a.blade, Transform::default()),
-                    Visibility::Hidden,
-                    NotShadowCaster,
-                ));
                 body.spawn((
                     crate::combat_fx::SlashTrail { source },
                     part(&a.slash_arc, &a.slash, Transform::default()),

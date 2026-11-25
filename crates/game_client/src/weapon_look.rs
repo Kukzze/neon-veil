@@ -243,14 +243,8 @@ pub struct WeaponLookPlugin;
 
 impl Plugin for WeaponLookPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WeaponLookAssets>().add_systems(
-            Update,
-            (
-                color_weapon,
-                shape_weapon.after(crate::combat_fx::animate_katana),
-                status_auras,
-            ),
-        );
+        app.init_resource::<WeaponLookAssets>()
+            .add_systems(Update, (color_weapon, status_auras));
     }
 }
 
