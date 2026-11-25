@@ -124,6 +124,11 @@ impl Drop for LocalServerHandle {
 /// Starts the offline-mode server on `network`. Clients join with
 /// `network.connect()`.
 pub fn spawn_local_server(network: &LoopbackNetwork) -> LocalServerHandle {
+    spawn_local_server_at(network, Vec3::ZERO)
+}
+
+/// Like [`spawn_local_server`], with players spawning at `spawn`.
+pub fn spawn_local_server_at(network: &LoopbackNetwork, spawn: Vec3) -> LocalServerHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let transport = network.server_transport();
     let signal = Arc::clone(&stop);
@@ -131,6 +136,9 @@ pub fn spawn_local_server(network: &LoopbackNetwork) -> LocalServerHandle {
         .name("neon-veil-local-server".into())
         .spawn(move || {
             let mut app = build_server_app(transport);
+            if let Some(mut state) = app.world_mut().get_resource_mut::<ServerNetworkState>() {
+                state.spawn_point = spawn;
+            }
             app.insert_resource(StopSignal(signal))
                 .add_systems(First, exit_on_stop);
             app.run();

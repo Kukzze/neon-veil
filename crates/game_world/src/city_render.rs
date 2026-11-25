@@ -5,6 +5,7 @@
 
 use crate::city::{self, Solid, SolidKind};
 use crate::mipmaps::{mip_chain, tiling_sampler};
+use avian3d::prelude::{Collider, RigidBody};
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
@@ -278,6 +279,8 @@ fn spawn_boundary(commands: &mut Commands, palette: &CityPalette) {
             Mesh3d(palette.cube.clone()),
             MeshMaterial3d(palette.barrier.clone()),
             Transform::from_translation(wall.center()).with_scale(size),
+            RigidBody::Static,
+            Collider::cuboid(1.0, 1.0, 1.0),
         ));
         // A red warning band at head height and one along the top.
         for y in [2.2, wall.max.y - 1.0] {
@@ -287,8 +290,13 @@ fn spawn_boundary(commands: &mut Commands, palette: &CityPalette) {
                 CityPiece,
                 Mesh3d(palette.cube.clone()),
                 MeshMaterial3d(palette.barrier_glow.clone()),
-                Transform::from_translation(wall.center().with_y(y) + inward)
-                    .with_scale(Vec3::new(size.x.max(0.1), 0.35, size.z.max(0.1))),
+                Transform::from_translation(wall.center().with_y(y) + inward).with_scale(
+                    if size.x < size.z {
+                        Vec3::new(0.1, 0.35, size.z)
+                    } else {
+                        Vec3::new(size.x, 0.35, 0.1)
+                    },
+                ),
             ));
         }
     }
@@ -311,6 +319,9 @@ fn spawn_solid(
                 Mesh3d(meshes.add(facade_mesh(size))),
                 MeshMaterial3d(material),
                 Transform::from_translation(center),
+                // Physics bodies (enemies, sight lines) collide with the city too.
+                RigidBody::Static,
+                Collider::cuboid(size.x, size.y, size.z),
             ));
             // Some towers carry a vertical neon strip on a corner.
             if index % 3 == 0 && size.y > 20.0 {
@@ -334,6 +345,8 @@ fn spawn_solid(
                 Mesh3d(palette.cube.clone()),
                 MeshMaterial3d(palette.sidewalk.clone()),
                 Transform::from_translation(center).with_scale(size),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 1.0, 1.0),
             ));
         }
         SolidKind::Prop | SolidKind::Rooftop | SolidKind::Bridge => {
@@ -347,6 +360,8 @@ fn spawn_solid(
                 Mesh3d(palette.cube.clone()),
                 MeshMaterial3d(material),
                 Transform::from_translation(center).with_scale(size),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 1.0, 1.0),
             ));
         }
         SolidKind::Barrier => {}
