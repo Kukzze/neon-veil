@@ -116,8 +116,21 @@ pub fn combo_class(class: WeaponClass) -> MeleeWeaponClass {
 /// already hit harder or softer by class).
 pub fn equipped_stats(item: &WeaponItem) -> WeaponStats {
     let mut stats = item.stats();
-    stats.damage /= item.base().class.profile().0;
+    // Divide by the class whose combo set this weapon swings with.
+    stats.damage /= combo_reference(item.base().class).profile().0;
     stats
+}
+
+/// The class whose combo set (and so base hit damage) a class borrows.
+pub fn combo_reference(class: WeaponClass) -> WeaponClass {
+    match combo_class(class) {
+        MeleeWeaponClass::CyberKatana => WeaponClass::Katana,
+        MeleeWeaponClass::MantisDualBlades => WeaponClass::DualBlades,
+        MeleeWeaponClass::ShockBaton => WeaponClass::Baton,
+        MeleeWeaponClass::KineticHeavyGauntlet => WeaponClass::Gauntlet,
+        MeleeWeaponClass::MonofilamentWhip => WeaponClass::Whip,
+        MeleeWeaponClass::ThermalClaymores => WeaponClass::Claymore,
+    }
 }
 
 /// A weapon base equipped for one session (`--weapon`), never saved.
@@ -240,6 +253,7 @@ pub fn weapon_hits(
     mut statuses: Query<&mut ActiveStatusEffects>,
     places: Query<&GlobalTransform>,
     bosses: Query<(), With<BossGorgon>>,
+    enemies: Query<&game_ai::Enemy>,
 ) {
     let Ok(player) = players.get_single() else {
         hits.clear();
@@ -258,10 +272,25 @@ pub fn weapon_hits(
         melee + all + b.get(PassiveStat::VoidDamage),
     ];
     for hit in hits.read().filter(|h| h.attacker == player) {
+        // Hits land in the fixed tick; the target may already be gone.
+        if healths.get(hit.target).is_err() {
+            continue;
+        }
         let mut dealt = s.hit(hit.damage, &bonus, next_roll(&mut rng));
         let mut extra = 1.0;
         if bosses.contains(hit.target) {
             extra += s.boss_pct / 100.0;
+        }
+        // Armour piercing pays off against armoured targets.
+        let armoured = bosses.contains(hit.target)
+            || enemies.get(hit.target).is_ok_and(|e| {
+                matches!(
+                    e.archetype,
+                    game_ai::EnemyArchetype::ShieldedHeavy | game_ai::EnemyArchetype::MechaEnforcer
+                )
+            });
+        if armoured {
+            extra += s.armor_pierce / 100.0;
         }
         if let Ok(h) = healths.get(hit.target) {
             if h.fraction() < 1.0 / 3.0 {
@@ -301,7 +330,7 @@ pub fn weapon_hits(
             match statuses.get_mut(hit.target) {
                 Ok(mut active) => active.apply_effect(effect),
                 Err(_) => {
-                    commands.entity(hit.target).insert(ActiveStatusEffects {
+                    commands.entity(hit.target).try_insert(ActiveStatusEffects {
                         effects: vec![effect],
                     });
                 }
@@ -382,7 +411,8 @@ fn spawn_drop(commands: &mut Commands, assets: &LootAssets, at: Vec3, item: Weap
         .spawn((
             Name::new("Weapon Drop"),
             LootDrop { item, age: 0.0 },
-            Transform::from_translation(at.with_y(0.25)),
+            // On whatever the enemy stood on (a street or a roof).
+            Transform::from_translation(at.with_y((at.y - 0.7).max(0.0) + 0.25)),
             Visibility::default(),
         ))
         .with_children(|drop| {
@@ -459,11 +489,10 @@ pub fn collect_loot(
         let Some(player) = player else {
             continue;
         };
-        if player
+        let planar = player
             .with_y(0.0)
-            .distance(transform.translation.with_y(0.0))
-            > PICKUP_RADIUS
-        {
+            .distance(transform.translation.with_y(0.0));
+        if planar > PICKUP_RADIUS || (player.y - transform.translation.y).abs() > 2.5 {
             continue;
         }
         let item = drop.item.clone();
@@ -636,11 +665,10 @@ pub fn draw_armory(mut contexts: EguiContexts, mut armory: ResMut<Armory>) {
                 .color(MUTED),
             );
             ui.add_space(12.0);
-            let dps = 100.0 * s.damage * s.attack_speed * (1.0 + s.physical_pct / 100.0);
+            let rating = 100.0 * s.damage * (1.0 + s.physical_pct / 100.0);
             for (k, v) in [
                 ("Damage", format!("{:.0}%", s.damage * 100.0)),
-                ("Attack speed", format!("{:.2}", s.attack_speed)),
-                ("Weapon rating", format!("{dps:.0}")),
+                ("Weapon rating", format!("{rating:.0}")),
                 (
                     "Element",
                     if base.element == Element::Physical {
@@ -721,7 +749,7 @@ impl Plugin for ArmoryPlugin {
                     drop_loot,
                     collect_loot,
                     weapon_kill_rewards,
-                    save_armory,
+                    save_armory.after(crate::lattice::save_lattice),
                     draw_armory.run_if(in_state(GameFlow::Playing)),
                 )
                     .chain(),
@@ -776,8 +804,10 @@ mod tests {
             rarity: Rarity::Common,
             mods: vec![],
         };
-        // Tier-1 weapons sit near 1x on top of their own combo damage.
-        assert!((equipped_stats(&item).damage - 1.0).abs() < 0.12);
+        // A hammer swings the gauntlet combo, hitting harder than a gauntlet.
+        let ratio = WeaponClass::Hammer.profile().0 / WeaponClass::Gauntlet.profile().0;
+        assert!((equipped_stats(&item).damage - ratio).abs() < 0.15);
+        assert_eq!(combo_reference(WeaponClass::Katana), WeaponClass::Katana);
         assert_eq!(
             combo_class(WeaponClass::Hammer),
             MeleeWeaponClass::KineticHeavyGauntlet
