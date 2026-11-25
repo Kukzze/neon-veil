@@ -41,7 +41,9 @@ pub struct Encounter {
     pub objective: &'static str,
 }
 
-use EnemyArchetype::{CyberNinja, Netrunner, ShieldedHeavy, StreetGrunt, SwarmDrone};
+use EnemyArchetype::{
+    CyberNinja, MechaEnforcer, Netrunner, ShieldedHeavy, StreetGrunt, SwarmDrone,
+};
 
 pub const ENCOUNTERS: [Encounter; 3] = [
     Encounter {
@@ -507,9 +509,15 @@ pub fn spawn_showcase(
     let Ok(player) = players.get_single() else {
         return;
     };
-    let lineup = [StreetGrunt, CyberNinja, ShieldedHeavy, Netrunner];
+    let lineup = [
+        StreetGrunt,
+        CyberNinja,
+        ShieldedHeavy,
+        MechaEnforcer,
+        Netrunner,
+    ];
     for (i, archetype) in lineup.into_iter().enumerate() {
-        let x = -3.6 + i as f32 * 2.4;
+        let x = -4.8 + i as f32 * 2.4;
         let at = Vec3::new(x, ENEMY_STANDING_Y, player.translation.z - 9.0);
         let enemy = spawn_enemy(&mut commands, archetype, at);
         commands.entity(enemy).insert((

@@ -58,6 +58,11 @@ pub struct Skeleton {
     pub rest_local_rotation: Vec<Quat>,
     pub rest_world_rotation: Vec<Quat>,
     pub index: HashMap<String, usize>,
+    /// Rig-space rotation of the root joints' parent (identity for the
+    /// MakeHuman body; imported rigs may face another way).
+    pub base_rotation: Quat,
+    /// Rig units per metre (1 for the MakeHuman body).
+    pub units_per_metre: f32,
 }
 
 /// One body instance's mesh, ready to be reshaped.
@@ -326,6 +331,8 @@ pub fn prepare_bodies(
                 .map(|q| q.unwrap_or_default())
                 .collect(),
             index,
+            base_rotation: Quat::IDENTITY,
+            units_per_metre: 1.0,
         };
 
         // Regions: special areas by vertex, then skin or suit by bone.

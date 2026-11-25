@@ -7,6 +7,7 @@ pub mod body;
 pub mod library;
 pub mod pose;
 pub mod proxy;
+pub mod rigged;
 pub mod skin_texture;
 
 pub use appearance::{
@@ -91,6 +92,7 @@ impl Plugin for CharacterPlugin {
                 Update,
                 (
                     body::prepare_bodies,
+                    rigged::prepare_rigged,
                     body::apply_appearances,
                     body::compose_albedos,
                     accessories::add_hidden_skin,

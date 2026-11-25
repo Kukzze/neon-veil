@@ -323,6 +323,9 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
     } else {
         add_once(&mut app, game_world::NeonDistrictPlugin);
         add_once(&mut app, game_world::CityPlugin);
+        app.insert_resource(crate::character::rigged::ArmorAvailable::detect(
+            &asset_root(),
+        ));
         // The story mission runs its encounters locally, so it is offline only.
         if options.session == SessionMode::Offline {
             app.add_plugins(crate::mission::MissionPlugin);

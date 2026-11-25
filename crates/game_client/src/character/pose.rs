@@ -317,14 +317,33 @@ pub fn evaluate_pose(
     let targets = limb_targets(state, input);
     let spine = spine_offsets(state);
     // Each limb bone points at its child joint.
-    let child_of = |i: usize| (0..count).find(|&c| skeleton.parents[c] == Some(i));
+    // Limbs aim at their named chain child (rigs also hang twist bones off
+    // them); anything else at its first child.
+    let child_of = |i: usize| {
+        let wanted = match skeleton.names[i].as_str() {
+            "thigh_l" => Some("calf_l"),
+            "thigh_r" => Some("calf_r"),
+            "calf_l" => Some("foot_l"),
+            "calf_r" => Some("foot_r"),
+            "upperarm_l" => Some("lowerarm_l"),
+            "upperarm_r" => Some("lowerarm_r"),
+            "lowerarm_l" => Some("hand_l"),
+            "lowerarm_r" => Some("hand_r"),
+            _ => None,
+        };
+        wanted
+            .and_then(|n| skeleton.index.get(n).copied())
+            .filter(|&c| skeleton.parents[c] == Some(i))
+            .or_else(|| (0..count).find(|&c| skeleton.parents[c] == Some(i)))
+    };
     let mut done = vec![false; count];
     for _ in 0..count {
         for i in 0..count {
             if done[i] || skeleton.parents[i].is_some_and(|p| !done[p]) {
                 continue;
             }
-            let parent_world = skeleton.parents[i].map_or(Quat::IDENTITY, |p| posed_world[p]);
+            let parent_world =
+                skeleton.parents[i].map_or(skeleton.base_rotation, |p| posed_world[p]);
             let inherited = parent_world * skeleton.rest_local_rotation[i];
             let name = skeleton.names[i].as_str();
             let mut world = inherited;
@@ -375,7 +394,7 @@ pub fn animate_bodies(
     mut bodies: Query<(Entity, &BodyInstance, Option<&mut PoseState>)>,
     parents: Query<&Parent>,
     avatars: Query<&OperativeAvatar>,
-    roots: Query<(), With<OperativeBody>>,
+    roots: Query<(), Or<(With<OperativeBody>, With<super::rigged::RiggedModel>)>>,
     sources: Query<(
         Option<&KinematicVelocity>,
         Option<&ClientPredictionState>,
@@ -455,8 +474,11 @@ pub fn animate_bodies(
                 if Some(i) == pelvis {
                     // Drop the hips in rig space, expressed in the parent frame.
                     let parent_rot = body.skeleton.parents[i]
-                        .map_or(Quat::IDENTITY, |p| body.skeleton.rest_world_rotation[p]);
-                    transform.translation += parent_rot.inverse() * Vec3::NEG_Y * drop;
+                        .map_or(body.skeleton.base_rotation, |p| {
+                            body.skeleton.rest_world_rotation[p]
+                        });
+                    transform.translation +=
+                        parent_rot.inverse() * Vec3::NEG_Y * drop * body.skeleton.units_per_metre;
                 }
             }
         }
@@ -498,6 +520,8 @@ mod tests {
                 rest_local_rotation: vec![Quat::IDENTITY; 4],
                 rest_world_rotation: vec![Quat::IDENTITY; 4],
                 index,
+                base_rotation: Quat::IDENTITY,
+                units_per_metre: 1.0,
             },
             rest_heads: vec![
                 Vec3::new(0.1, 1.0, 0.0),

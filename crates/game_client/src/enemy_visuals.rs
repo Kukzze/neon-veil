@@ -2,6 +2,7 @@
 //! Gorgon. Enemies are simulation entities (capsule centre at their
 //! transform); this module dresses them when they appear.
 
+use crate::character::rigged::{spawn_armor, ArmorAvailable};
 use crate::character::{spawn_operative_body_at, CharacterAppearance, MorphLibrary, Preset};
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
@@ -747,6 +748,7 @@ pub fn dress_new_enemies(
     assets: Res<EnemyAssets>,
     asset_server: Res<AssetServer>,
     library: Option<Res<MorphLibrary>>,
+    armor: Option<Res<ArmorAvailable>>,
     enemies: Query<(Entity, &Enemy), Added<Enemy>>,
     bosses: Query<Entity, Added<BossGorgon>>,
 ) {
@@ -779,11 +781,26 @@ pub fn dress_new_enemies(
             });
         if !flying && library.is_some() {
             // A real human body: feet on the ground, facing the enemy's forward.
-            let look = enemy_look(enemy.archetype, entity.to_bits(), &face_sliders);
             let at = Transform::from_xyz(0.0, -ENEMY_FEET, 0.0)
-                .with_rotation(Quat::from_rotation_y(std::f32::consts::PI))
-                .with_scale(Vec3::splat(build.scale));
-            spawn_operative_body_at(&mut commands, &asset_server, entity, look, at);
+                .with_rotation(Quat::from_rotation_y(std::f32::consts::PI));
+            if enemy.archetype == EnemyArchetype::MechaEnforcer
+                && armor.as_ref().is_some_and(|a| a.0)
+            {
+                // Enforcers wear the full cyber armour.
+                let trim = LinearRgba::rgb(5.0, 2.0, 0.5);
+                spawn_armor(
+                    &mut commands,
+                    &asset_server,
+                    entity,
+                    1.8 * build.scale,
+                    at,
+                    trim,
+                );
+            } else {
+                let look = enemy_look(enemy.archetype, entity.to_bits(), &face_sliders);
+                let at = at.with_scale(Vec3::splat(build.scale));
+                spawn_operative_body_at(&mut commands, &asset_server, entity, look, at);
+            }
         }
         let height = if flying {
             0.7
