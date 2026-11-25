@@ -161,6 +161,133 @@ pub fn weapon_parts(class: WeaponClass) -> Vec<Part> {
     }
 }
 
+/// File stem of each class's model in `assets/weapons` (built by
+/// `tools/blender/build_weapons.py`).
+pub fn model_file(class: WeaponClass) -> &'static str {
+    match class {
+        WeaponClass::Katana => "katana",
+        WeaponClass::DualBlades => "dual_blades",
+        WeaponClass::Baton => "baton",
+        WeaponClass::Gauntlet => "gauntlet",
+        WeaponClass::Whip => "whip",
+        WeaponClass::Claymore => "claymore",
+        WeaponClass::Spear => "spear",
+        WeaponClass::Scythe => "scythe",
+        WeaponClass::Axe => "axe",
+        WeaponClass::Hammer => "hammer",
+    }
+}
+
+/// The hands that carry a class's model (paired weapons take both).
+pub fn model_hands(class: WeaponClass) -> &'static [Hand] {
+    match class {
+        WeaponClass::DualBlades | WeaponClass::Gauntlet => &[Hand::Right, Hand::Left],
+        _ => &[Hand::Right],
+    }
+}
+
+/// Metres past the wrist joint to the model's grip point.
+fn model_reach(class: WeaponClass) -> f32 {
+    if class == WeaponClass::Gauntlet {
+        0.0
+    } else {
+        0.02
+    }
+}
+
+/// The weapon models, when the asset files are present (headless runs and
+/// stripped builds fall back to the part models).
+#[derive(Resource)]
+pub struct WeaponModels {
+    scenes: Option<Vec<Handle<Scene>>>,
+}
+
+impl WeaponModels {
+    pub fn scene(&self, class: WeaponClass) -> Option<Handle<Scene>> {
+        let index = WeaponClass::ALL.iter().position(|c| *c == class)?;
+        self.scenes.as_ref()?.get(index).cloned()
+    }
+}
+
+impl FromWorld for WeaponModels {
+    fn from_world(world: &mut World) -> Self {
+        let root = crate::app::asset_root();
+        let present = WeaponClass::ALL.iter().all(|c| {
+            root.join(format!("weapons/{}.glb", model_file(*c)))
+                .exists()
+        });
+        let Some(assets) = world.get_resource::<AssetServer>().filter(|_| present) else {
+            return Self { scenes: None };
+        };
+        let scenes = WeaponClass::ALL
+            .iter()
+            .map(|c| {
+                assets.load(
+                    GltfAssetLabel::Scene(0).from_asset(format!("weapons/{}.glb", model_file(*c))),
+                )
+            })
+            .collect();
+        Self {
+            scenes: Some(scenes),
+        }
+    }
+}
+
+/// A held weapon model; its glow takes the element's colour.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeldWeaponModel {
+    pub element: usize,
+}
+
+/// Marks a model mesh whose material has been checked (and the glow swapped).
+#[derive(Component)]
+pub struct WeaponMaterialChecked;
+
+/// Repeats of the energy pulse along a weapon, and how fast it travels
+/// (weapon lengths per second).
+const FLOW_PULSES: f32 = 2.0;
+const FLOW_SPEED: f32 = 0.7;
+
+/// Brightness of the flowing energy along the glow (0 at the hand end, 1 at
+/// the tip): a steady core with soft pulses riding on it.
+pub fn flow_brightness(v: f32) -> f32 {
+    let phase = (v * FLOW_PULSES).rem_euclid(1.0) - 0.5;
+    0.35 + 0.65 * (-(phase / 0.13).powi(2)).exp()
+}
+
+/// A tiling strip of [`flow_brightness`] for the glow's emissive texture.
+fn flow_texture() -> Image {
+    use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+    use bevy::render::render_asset::RenderAssetUsages;
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    const HEIGHT: u32 = 128;
+    let mut data = Vec::with_capacity((HEIGHT * 4 * 4) as usize);
+    for row in 0..HEIGHT {
+        let v = (row as f32 + 0.5) / HEIGHT as f32 / FLOW_PULSES;
+        let level = (flow_brightness(v) * 255.0).round() as u8;
+        for _ in 0..4 {
+            data.extend_from_slice(&[level, level, level, 255]);
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: 4,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        ..ImageSamplerDescriptor::linear()
+    });
+    image
+}
+
 #[derive(Resource)]
 pub struct HeldWeaponAssets {
     cube: Handle<Mesh>,
@@ -168,6 +295,8 @@ pub struct HeldWeaponAssets {
     steel: Handle<StandardMaterial>,
     grip: Handle<StandardMaterial>,
     glows: Vec<Handle<StandardMaterial>>,
+    /// Per element: the model glow, with energy flowing along it.
+    flows: Vec<Handle<StandardMaterial>>,
 }
 
 impl FromWorld for HeldWeaponAssets {
@@ -179,7 +308,22 @@ impl FromWorld for HeldWeaponAssets {
                 meshes.add(Cylinder::new(0.5, 1.0)),
             )
         };
+        let flow = world
+            .get_resource_mut::<Assets<Image>>()
+            .map(|mut images| images.add(flow_texture()));
         let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+        let flows = Element::ALL
+            .iter()
+            .map(|e| {
+                let glow = element_glow(*e);
+                materials.add(StandardMaterial {
+                    base_color: Color::LinearRgba(glow * 0.05),
+                    emissive: glow * 2.4,
+                    emissive_texture: flow.clone(),
+                    ..default()
+                })
+            })
+            .collect();
         let steel = materials.add(StandardMaterial {
             base_color: Color::srgb(0.32, 0.34, 0.37),
             perceptual_roughness: 0.22,
@@ -208,6 +352,7 @@ impl FromWorld for HeldWeaponAssets {
             steel,
             grip,
             glows,
+            flows,
         }
     }
 }
@@ -221,10 +366,12 @@ pub struct HeldWeaponPart {
 
 /// Puts the equipped weapon in the local operative's hands and swaps it
 /// when another is equipped.
+#[allow(clippy::too_many_arguments)]
 pub fn hold_weapon(
     mut commands: Commands,
     armory: Res<Armory>,
     assets: Res<HeldWeaponAssets>,
+    models: Res<WeaponModels>,
     players: Query<Entity, With<LocalPredictedPlayer>>,
     avatars: Query<&OperativeAvatar>,
     bodies: Query<(Entity, &Parent), With<OperativeBody>>,
@@ -251,6 +398,29 @@ pub fn hold_weapon(
         commands.entity(entity).despawn_recursive();
     }
     let base = item.base();
+    if let Some(scene) = models.scene(base.class) {
+        for hand in model_hands(base.class) {
+            let (from, to) = match hand {
+                Hand::Right => ("lowerarm_r", "hand_r"),
+                Hand::Left => ("lowerarm_l", "hand_l"),
+            };
+            commands.spawn((
+                Name::new("Held Weapon"),
+                HeldWeaponPart { base: item.base },
+                HeldWeaponModel {
+                    element: base.element.index(),
+                },
+                SceneRoot(scene.clone()),
+                Transform::default(),
+                Visibility::Hidden,
+                GearMount::new(body, from, to, 1.0)
+                    .aligned()
+                    .lean(carry_lean(base.class))
+                    .reach(model_reach(base.class)),
+            ));
+        }
+        return;
+    }
     let glow = assets.glows[base.element.index()].clone();
     for p in weapon_parts(base.class) {
         let (from, to) = match p.hand {
@@ -283,6 +453,75 @@ pub fn hold_weapon(
         ));
         if p.finish == Finish::Glow {
             part.insert(NotShadowCaster);
+        }
+    }
+}
+
+/// Swaps each model's emissive material for the element's flowing glow
+/// (other materials keep the model's own steel, brass and wrap).
+pub fn tint_weapon_models(
+    mut commands: Commands,
+    assets: Res<HeldWeaponAssets>,
+    materials: Res<Assets<StandardMaterial>>,
+    models: Query<(Entity, &HeldWeaponModel)>,
+    children: Query<&Children>,
+    mut meshes: Query<&mut MeshMaterial3d<StandardMaterial>, Without<WeaponMaterialChecked>>,
+) {
+    for (root, model) in &models {
+        for entity in children.iter_descendants(root) {
+            let Ok(mut material) = meshes.get_mut(entity) else {
+                continue;
+            };
+            let Some(source) = materials.get(&material.0) else {
+                continue;
+            };
+            let e = source.emissive;
+            let mut checked = commands.entity(entity);
+            checked.insert(WeaponMaterialChecked);
+            if e.red + e.green + e.blue > 0.01 {
+                material.0 = assets.flows[model.element].clone();
+                checked.insert(NotShadowCaster);
+            }
+        }
+    }
+}
+
+/// Sends the energy pulses up every glow, hand to tip.
+pub fn flow_weapon_glow(
+    time: Res<Time>,
+    assets: Res<HeldWeaponAssets>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let shift = (time.elapsed_secs() * FLOW_SPEED).rem_euclid(1.0);
+    for handle in &assets.flows {
+        if let Some(material) = materials.get_mut(handle) {
+            material.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(0.0, -shift));
+        }
+    }
+}
+
+/// Mounts are placed after transforms propagate, so carry their new pose
+/// down to the model's meshes the same frame (else the weapon trails the
+/// hand by a frame mid-swing).
+pub fn propagate_weapon_models(
+    roots: Query<(Entity, &GlobalTransform), With<HeldWeaponModel>>,
+    children: Query<&Children>,
+    mut nodes: Query<(&Transform, &mut GlobalTransform), Without<HeldWeaponModel>>,
+) {
+    for (root, global) in &roots {
+        let mut stack = vec![(root, *global)];
+        while let Some((entity, parent)) = stack.pop() {
+            let Ok(kids) = children.get(entity) else {
+                continue;
+            };
+            for &child in kids {
+                let Ok((local, mut child_global)) = nodes.get_mut(child) else {
+                    continue;
+                };
+                let next = parent.mul_transform(*local);
+                *child_global = next;
+                stack.push((child, next));
+            }
         }
     }
 }
@@ -321,7 +560,20 @@ pub struct HeldWeaponPlugin;
 impl Plugin for HeldWeaponPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HeldWeaponAssets>()
-            .add_systems(Update, (hold_weapon, hide_body_in_first_person));
+            .init_resource::<WeaponModels>()
+            .add_systems(
+                Update,
+                (
+                    hold_weapon,
+                    tint_weapon_models,
+                    flow_weapon_glow,
+                    hide_body_in_first_person,
+                ),
+            )
+            .add_systems(
+                PostUpdate,
+                propagate_weapon_models.after(crate::enemy_visuals::follow_gear_mounts),
+            );
     }
 }
 
@@ -353,5 +605,31 @@ mod tests {
         };
         assert!(reach(WeaponClass::Spear) > reach(WeaponClass::Katana));
         assert!(reach(WeaponClass::Katana) > reach(WeaponClass::DualBlades));
+    }
+
+    #[test]
+    fn every_class_has_a_built_model_file() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/weapons");
+        let mut stems: Vec<_> = WeaponClass::ALL.iter().map(|c| model_file(*c)).collect();
+        for stem in &stems {
+            assert!(dir.join(format!("{stem}.glb")).exists(), "{stem}.glb");
+        }
+        stems.dedup();
+        assert_eq!(stems.len(), WeaponClass::ALL.len());
+        assert_eq!(model_hands(WeaponClass::DualBlades).len(), 2);
+        assert_eq!(model_hands(WeaponClass::Katana), &[Hand::Right]);
+    }
+
+    #[test]
+    fn energy_pulses_ride_a_steady_core() {
+        let samples: Vec<f32> = (0..200)
+            .map(|i| flow_brightness(i as f32 / 200.0))
+            .collect();
+        let lo = samples.iter().copied().fold(f32::MAX, f32::min);
+        let hi = samples.iter().copied().fold(f32::MIN, f32::max);
+        assert!(lo > 0.3 && lo < 0.4, "core {lo}");
+        assert!(hi > 0.95 && hi <= 1.0, "pulse {hi}");
+        // The strip tiles: brightness repeats every 1 / FLOW_PULSES.
+        assert!((flow_brightness(0.1) - flow_brightness(0.1 + 1.0 / FLOW_PULSES)).abs() < 1e-4);
     }
 }
