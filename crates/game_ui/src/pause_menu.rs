@@ -145,6 +145,18 @@ pub struct PausePageNode(pub PausePage);
 #[derive(Component)]
 pub struct ControlsBadgeNode;
 
+/// Whether the player has clicked into the game window to hand it the
+/// mouse. Off at launch and whenever the window loses focus, so the game
+/// never traps the cursor before the player asks it to.
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MouseCapture {
+    pub armed: bool,
+}
+
+/// "Click to play" hint, shown while the mouse is free.
+#[derive(Component)]
+pub struct ClickToPlayHint;
+
 const BUTTON_IDLE: Color = Color::srgba(0.0, 0.9, 1.0, 0.06);
 const BUTTON_HOVER: Color = Color::srgba(0.0, 0.9, 1.0, 0.22);
 const BUTTON_PRESS: Color = Color::srgba(1.0, 0.67, 0.0, 0.35);
@@ -221,6 +233,7 @@ fn spaced<B: Bundle>(bundle: B, margin: UiRect) -> (B, Node) {
 
 pub fn setup_pause_menu(mut commands: Commands, hud_font: Option<Res<HudFont>>) {
     let font = hud_font.map(|f| f.0.clone()).unwrap_or_default();
+    spawn_click_hint(&mut commands, &font);
     let panel = Node {
         flex_direction: FlexDirection::Column,
         padding: UiRect::all(Val::Px(32.0)),
@@ -345,6 +358,57 @@ pub fn setup_pause_menu(mut commands: Commands, hud_font: Option<Res<HudFont>>) 
         });
 }
 
+/// Spawns the centred "click to play" hint (hidden until needed).
+pub fn spawn_click_hint(commands: &mut Commands, font: &Handle<Font>) {
+    commands
+        .spawn((
+            ClickToPlayHint,
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                bottom: Val::Percent(30.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            Visibility::Hidden,
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.02, 0.04, 0.06, 0.6)),
+                BorderRadius::all(Val::Px(6.0)),
+            ))
+            .with_children(|pill| {
+                pill.spawn(hud_text(
+                    font,
+                    "Click to play  ·  Esc frees the mouse",
+                    13.0,
+                    TEXT,
+                ));
+            });
+        });
+}
+
+/// Shows the hint while gameplay is up but the mouse is not captured.
+pub fn sync_click_hint(
+    capture: Res<MouseCapture>,
+    gate: Res<GameplayInputGate>,
+    mut hints: Query<&mut Visibility, With<ClickToPlayHint>>,
+) {
+    let show = !capture.armed && !gate.blocked;
+    for mut visibility in &mut hints {
+        let want = if show {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        visibility.set_if_neq(want);
+    }
+}
+
 pub fn toggle_controls_badge(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     mut badge: ResMut<ControlsBadgeState>,
@@ -449,6 +513,8 @@ pub fn sync_gameplay_focus(
     overlay: Option<Res<ScreenOverlay>>,
     mut gate: ResMut<GameplayInputGate>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    mut mouse_capture: ResMut<MouseCapture>,
 ) {
     let menu =
         any_menu_open(&pause, &skills, &inventory, &settings) || overlay.is_some_and(|o| o.0);
@@ -457,7 +523,16 @@ pub fn sync_gameplay_focus(
         blocked: menu || held,
     });
     for mut window in &mut windows {
-        let capture = !menu && window.focused;
+        // Capture only after a click into the focused window; losing focus
+        // (Alt+Tab) hands the mouse back until the next click.
+        let armed = window.focused
+            && (mouse_capture.armed
+                || (!menu
+                    && mouse
+                        .as_ref()
+                        .is_some_and(|m| m.just_pressed(MouseButton::Left))));
+        mouse_capture.set_if_neq(MouseCapture { armed });
+        let capture = !menu && armed;
         let mode = if capture {
             GAMEPLAY_GRAB_MODE
         } else {
@@ -475,6 +550,56 @@ pub fn sync_gameplay_focus(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_mouse_is_only_captured_after_a_click_into_the_window() {
+        let mut app = App::new();
+        app.init_resource::<PauseMenuState>()
+            .init_resource::<SkillsModalState>()
+            .init_resource::<InventoryModalState>()
+            .init_resource::<SettingsModalState>()
+            .init_resource::<GameplayInputGate>()
+            .init_resource::<MouseCapture>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_systems(Update, sync_gameplay_focus);
+        let window = app
+            .world_mut()
+            .spawn((
+                Window {
+                    focused: true,
+                    ..default()
+                },
+                PrimaryWindow,
+            ))
+            .id();
+        let grab = |app: &App| {
+            app.world()
+                .get::<Window>(window)
+                .unwrap()
+                .cursor_options
+                .grab_mode
+        };
+        app.update();
+        assert_eq!(grab(&app), CursorGrabMode::None, "free at launch");
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert_eq!(grab(&app), GAMEPLAY_GRAB_MODE, "captured after a click");
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = false;
+        app.update();
+        assert_eq!(grab(&app), CursorGrabMode::None, "Alt+Tab frees it");
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
+        app.update();
+        assert_eq!(
+            grab(&app),
+            CursorGrabMode::None,
+            "refocus waits for a click"
+        );
+    }
 
     #[test]
     fn buttons_drive_the_menu() {

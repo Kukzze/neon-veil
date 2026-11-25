@@ -149,6 +149,7 @@ impl Plugin for UiPlugin {
             .add_event::<game_audio::SubtitleDisplayEvent>()
             .init_resource::<ControlsBadgeState>()
             .init_resource::<GameplayInputGate>()
+            .init_resource::<pause_menu::MouseCapture>()
             .add_event::<RangedHitEvent>()
             .add_event::<MeleeHitEvent>()
             .add_event::<game_audio::PlaySfxEvent>()
@@ -189,6 +190,7 @@ impl Plugin for UiPlugin {
                         pause_menu::toggle_controls_badge,
                         pause_menu::sync_pause_menu_visibility,
                         pause_menu::sync_gameplay_focus,
+                        pause_menu::sync_click_hint,
                         pause_menu::pause_simulation_time,
                     )
                         .chain(),
