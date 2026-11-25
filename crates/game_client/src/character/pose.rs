@@ -25,6 +25,10 @@ pub struct PoseInputs {
     /// Combo index and progress (0..1) of the running attack.
     pub attack: Option<(u8, f32)>,
     pub guarding: bool,
+    /// Running along a wall.
+    pub wall_run: bool,
+    /// Climbing over an edge (mantle or vault).
+    pub mantle: bool,
 }
 
 /// Smoothed animation state of one body.
@@ -41,6 +45,9 @@ pub struct PoseState {
     pub rise: f32,
     /// Landing squash, 1 on a hard touchdown, recovering to 0.
     pub land: f32,
+    /// Wall-run and mantle blends.
+    pub wall: f32,
+    pub mantle: f32,
     /// Soft-tissue offset per side (x: bounce, y: sway), radians.
     pub jiggle: [Vec2; 2],
     pub jiggle_velocity: [Vec2; 2],
@@ -97,7 +104,10 @@ impl PoseState {
     pub fn advance(&mut self, input: &PoseInputs, dt: f32) {
         let t = 1.0 - (-BLEND_RATE * dt).exp();
         let ease = |v: &mut f32, target: f32| *v += (target - *v) * t;
-        let moving = if input.sliding || input.airborne {
+        let moving = if input.wall_run {
+            // Legs keep running along the wall.
+            1.0
+        } else if input.sliding || input.airborne {
             0.0
         } else {
             (input.speed / WALK_SPEED).min(1.0)
@@ -112,7 +122,10 @@ impl PoseState {
             &mut self.sprint,
             ((input.speed - WALK_SPEED) / (SPRINT_SPEED - WALK_SPEED)).clamp(0.0, 1.0),
         );
-        ease(&mut self.air, if input.airborne { 1.0 } else { 0.0 });
+        let flying = input.airborne && !input.wall_run && !input.mantle;
+        ease(&mut self.air, if flying { 1.0 } else { 0.0 });
+        ease(&mut self.wall, if input.wall_run { 1.0 } else { 0.0 });
+        ease(&mut self.mantle, if input.mantle { 1.0 } else { 0.0 });
         ease(&mut self.rise, (input.vertical / 5.0).clamp(-1.0, 1.0));
         ease(&mut self.slide, if input.sliding { 1.0 } else { 0.0 });
         ease(&mut self.guard, if input.guarding { 1.0 } else { 0.0 });
@@ -180,6 +193,9 @@ pub fn limb_targets(state: &PoseState, input: &PoseInputs) -> Vec<(&'static str,
         let mut knee = knee_gait * gait + knee_air * air + knee_idle * idle;
         thigh = thigh * (1.0 - state.slide) + slide_thigh * state.slide;
         knee = knee * (1.0 - state.slide) + slide_knee * state.slide;
+        // Mantle: knees drawn up to clear the edge.
+        thigh = thigh * (1.0 - state.mantle) - 1.15 * state.mantle;
+        knee = knee * (1.0 - state.mantle) + 1.75 * state.mantle;
         // Landing squash: hips sink, knees fold.
         thigh -= 0.45 * land;
         knee += 0.9 * land;
@@ -204,13 +220,24 @@ pub fn limb_targets(state: &PoseState, input: &PoseInputs) -> Vec<(&'static str,
         let front = (state.phase + offset).sin();
         let swing = -front * (0.32 + 0.5 * sprint) * gait;
         let breath = (state.time * 1.7).sin() * 0.02 * idle;
-        let hang = 0.13 + 0.06 * idle + 0.5 * air * (1.0 - state.rise.max(0.0)) + 0.2 * land;
+        // Arms out for balance in the air and along a wall.
+        let hang = 0.13
+            + 0.06 * idle
+            + 0.5 * air * (1.0 - state.rise.max(0.0))
+            + 0.2 * land
+            + 0.8 * state.wall;
         let mut arm = rot_x(
             swing - 0.06 * idle + breath - 0.5 * air * state.rise.max(0.0),
             down(side, hang),
         );
         let mut elbow =
             -0.28 * idle - (0.35 + 1.05 * sprint) * gait - 0.25 * front.max(0.0) * gait - 0.5 * air;
+        if state.mantle > 0.01 {
+            // Both hands reach ahead and up to plant on the edge.
+            let plant = Vec3::new(side * 0.28, 0.5, 1.0).normalize();
+            arm = arm.lerp(plant, state.mantle).normalize();
+            elbow = elbow * (1.0 - state.mantle) - 0.55 * state.mantle;
+        }
         if state.slide > 0.0 {
             let braced = Vec3::new(side * 0.8, -0.35, -0.3).normalize();
             arm = arm.lerp(braced, state.slide).normalize();
@@ -242,6 +269,8 @@ fn spine_offsets(state: &PoseState) -> [(&'static str, Quat); 5] {
     let gait = state.gait;
     let idle = state.idle();
     let lean = 0.07 * gait + 0.22 * state.sprint * gait - 0.45 * state.slide
+        + 0.35 * state.mantle
+        + 0.12 * state.wall
         + 0.28 * state.land
         + 0.12 * state.air * state.rise.max(0.0);
     // Hips turn with the forward leg and the shoulders counter-rotate.
@@ -390,6 +419,8 @@ pub fn animate_bodies(
                 speed: Vec2::new(velocity.x, velocity.z).length(),
                 airborne: movement.is_some_and(|m| !m.grounded),
                 sliding: movement.is_some_and(|m| m.sliding),
+                wall_run: movement.is_some_and(|m| m.on_wall),
+                mantle: movement.is_some_and(|m| m.mantle_ticks > 0),
                 vertical: velocity.y,
                 attack: melee.and_then(|m| {
                     let attack = m.current_attack?;
@@ -488,6 +519,21 @@ mod tests {
             rot *= local[*i];
         }
         rot * (body.rest_heads[child] - body.rest_heads[bone]).normalize()
+    }
+
+    #[test]
+    fn mantling_plants_both_hands_ahead_and_up() {
+        let state = PoseState {
+            mantle: 1.0,
+            ..default()
+        };
+        let targets = limb_targets(&state, &PoseInputs::default());
+        for arm in ["upperarm_l", "upperarm_r"] {
+            let (_, dir) = targets.iter().find(|(n, _)| *n == arm).expect("arm");
+            assert!(dir.z > 0.6 && dir.y > 0.2, "{arm}: {dir}");
+        }
+        let (_, thigh) = targets.iter().find(|(n, _)| *n == "thigh_l").expect("thigh");
+        assert!(thigh.z > 0.6, "knee drawn up: {thigh}");
     }
 
     #[test]

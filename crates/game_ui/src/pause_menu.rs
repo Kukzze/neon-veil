@@ -12,12 +12,15 @@ use game_audio::PlaySfxEvent;
 use game_input::GameplayInputGate;
 
 /// Controls listed on the controls page.
-pub const CONTROL_BINDINGS: [(&str, &str); 18] = [
+pub const CONTROL_BINDINGS: [(&str, &str); 21] = [
     ("W A S D", "Move"),
     ("Mouse", "Look"),
     ("Space", "Jump"),
     ("Shift", "Sprint"),
     ("C / Ctrl", "Crouch, slide while sprinting"),
+    ("Shift into a crate", "Vault it"),
+    ("Jump at a ledge", "Grab and climb it"),
+    ("Shift along a wall in the air", "Wall-run; Space kicks off the wall"),
     ("Alt", "Dodge roll"),
     ("LMB", "Katana combo / fire"),
     ("MMB", "Heavy attack"),
