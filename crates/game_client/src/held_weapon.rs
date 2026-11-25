@@ -5,7 +5,7 @@
 //! weapon's element colour.
 
 use crate::armory::Armory;
-use crate::character::OperativeBody;
+use crate::character::{BodyInstance, OperativeBody};
 use crate::client_network::LocalPredictedPlayer;
 use crate::enemy_visuals::GearMount;
 use crate::visuals::OperativeAvatar;
@@ -186,13 +186,167 @@ pub fn model_hands(class: WeaponClass) -> &'static [Hand] {
     }
 }
 
-/// Metres past the wrist joint to the model's grip point.
-fn model_reach(class: WeaponClass) -> f32 {
-    if class == WeaponClass::Gauntlet {
-        0.0
-    } else {
-        0.02
+/// Where the fist closes on a gripped model: metres up the model from its
+/// origin. `None` for worn weapons (the gauntlet), which ride the forearm.
+pub fn model_hold(class: WeaponClass) -> Option<f32> {
+    match class {
+        WeaponClass::Gauntlet => None,
+        WeaponClass::Katana => Some(0.075),
+        WeaponClass::DualBlades => Some(0.025),
+        WeaponClass::Baton => Some(0.03),
+        WeaponClass::Whip => Some(0.03),
+        WeaponClass::Claymore => Some(0.11),
+        WeaponClass::Spear => Some(0.08),
+        WeaponClass::Scythe => Some(0.0),
+        WeaponClass::Axe => Some(0.0),
+        WeaponClass::Hammer => Some(0.02),
     }
+}
+
+/// Finger chains of a hand, base to tip.
+const FINGERS: [&str; 4] = ["index", "middle", "ring", "pinky"];
+
+/// Curl of each finger joint (01, 02, 03) around a grip, and of the thumb.
+const FINGER_CURL: [f32; 3] = [1.15, 1.35, 0.9];
+const THUMB_CURL: [f32; 3] = [0.35, 0.55, 0.45];
+
+fn joint_name(part: &str, segment: usize, hand: Hand) -> String {
+    let side = match hand {
+        Hand::Right => "r",
+        Hand::Left => "l",
+    };
+    format!("{part}_0{segment}_{side}")
+}
+
+fn hand_name(hand: Hand) -> &'static str {
+    match hand {
+        Hand::Right => "hand_r",
+        Hand::Left => "hand_l",
+    }
+}
+
+/// +1 or -1: which way around the knuckle line (pinky to index) the
+/// fingers close, read from the slight bend they have at rest.
+pub fn closing_sign(body: &BodyInstance, hand: Hand) -> Option<f32> {
+    let skeleton = &body.skeleton;
+    let head = |part: &str, segment| {
+        let i = *skeleton.index.get(&joint_name(part, segment, hand))?;
+        body.rest_heads.get(i).copied()
+    };
+    let knuckles = head("index", 1)? - head("pinky", 1)?;
+    let mut bend = Vec3::ZERO;
+    for finger in FINGERS {
+        let (a, b, c) = (head(finger, 1)?, head(finger, 2)?, head(finger, 3)?);
+        bend += (b - a).cross(c - b);
+    }
+    let along = bend.dot(knuckles.normalize_or_zero());
+    if along.abs() > 1e-9 {
+        return Some(along.signum());
+    }
+    // Straight fingers: the thumb sits on the palm side.
+    let middle = head("middle", 3)? - head("middle", 1)?;
+    let palm = knuckles.cross(middle);
+    let thumb = head("thumb", 3)? - head("middle", 1)?;
+    Some(if palm.dot(thumb) >= 0.0 { 1.0 } else { -1.0 })
+}
+
+/// Local rotations that close a hand around a grip: (joint index, rotation
+/// to use instead of the joint's rest rotation).
+pub fn grip_curls(body: &BodyInstance, hand: Hand) -> Vec<(usize, Quat)> {
+    let skeleton = &body.skeleton;
+    let Some(sign) = closing_sign(body, hand) else {
+        return Vec::new();
+    };
+    let index = |part: &str, segment| {
+        skeleton
+            .index
+            .get(&joint_name(part, segment, hand))
+            .copied()
+    };
+    let (Some(i1), Some(p1)) = (index("index", 1), index("pinky", 1)) else {
+        return Vec::new();
+    };
+    let knuckles = (body.rest_heads[i1] - body.rest_heads[p1]).normalize_or_zero() * sign;
+    let mut out = Vec::new();
+    let mut curl = |joint: usize, axis_rig: Vec3, angle: f32| {
+        let Some(parent) = skeleton.parents[joint] else {
+            return;
+        };
+        let axis = (skeleton.rest_world_rotation[parent].inverse() * axis_rig).normalize_or_zero();
+        if axis != Vec3::ZERO {
+            let delta = Quat::from_axis_angle(axis, angle);
+            out.push((joint, delta * skeleton.rest_local_rotation[joint]));
+        }
+    };
+    for finger in FINGERS {
+        for (k, angle) in FINGER_CURL.iter().enumerate() {
+            if let Some(j) = index(finger, k + 1) {
+                curl(j, knuckles, *angle);
+            }
+        }
+    }
+    // The thumb folds over the fingers, towards the middle knuckle.
+    if let (Some(t1), Some(t3), Some(m2)) =
+        (index("thumb", 1), index("thumb", 3), index("middle", 2))
+    {
+        let (base, tip, target) = (
+            body.rest_heads[t1],
+            body.rest_heads[t3],
+            body.rest_heads[m2],
+        );
+        let axis = (tip - base).cross(target - base).normalize_or_zero();
+        for (k, angle) in THUMB_CURL.iter().enumerate() {
+            if let Some(j) = index("thumb", k + 1) {
+                curl(j, axis, *angle);
+            }
+        }
+    }
+    out
+}
+
+/// How far the grip line leans from the knuckle line towards the fingers.
+const GRIP_TILT: f32 = 0.28;
+
+/// The roll about the forearm that turns a hand's knuckle line (pinky to
+/// index) towards `target`, both taken across the forearm `axis`.
+pub fn wrist_roll(axis: Vec3, knuckles: Vec3, target: Vec3) -> f32 {
+    let across = |v: Vec3| (v - axis * axis.dot(v)).normalize_or_zero();
+    let (k, t) = (across(knuckles), across(target));
+    if k == Vec3::ZERO || t == Vec3::ZERO {
+        return 0.0;
+    }
+    axis.dot(k.cross(t)).atan2(k.dot(t))
+}
+
+/// Where a gripped model sits, from the hand's posed joints: the grip runs
+/// across the palm (index side out, leaning by [`GRIP_TILT`]), held inside
+/// the closed fingers, with the edge (model -X) facing the knuckles.
+pub fn grip_transform(
+    wrist: Vec3,
+    [index, middle, ring, pinky]: [Vec3; 4],
+    sign: f32,
+    hold: f32,
+    scale: f32,
+) -> Option<Transform> {
+    let knuckles = (index + middle + ring + pinky) * 0.25;
+    let line = (index - pinky).normalize_or_zero();
+    let out = (knuckles - wrist).normalize_or_zero();
+    let palm = (line.cross(out) * sign).normalize_or_zero();
+    // A real grip crosses the palm diagonally, from the index knuckle to the
+    // heel of the hand, so the weapon leans out past the fingers.
+    let along = (line + out * GRIP_TILT.tan()).normalize_or_zero();
+    let front = (out - along * along.dot(out)).normalize_or_zero();
+    if line == Vec3::ZERO || front == Vec3::ZERO || palm == Vec3::ZERO {
+        return None;
+    }
+    let x = -front;
+    let rotation = Quat::from_mat3(&Mat3::from_cols(x, along, x.cross(along)));
+    let grip = wrist.lerp(knuckles, 0.62) + palm * 0.024 * scale;
+    Some(Transform {
+        translation: grip - rotation * Vec3::Y * hold * scale,
+        rotation,
+        scale: Vec3::splat(scale),
+    })
 }
 
 /// The weapon models, when the asset files are present (headless runs and
@@ -234,9 +388,14 @@ impl FromWorld for WeaponModels {
 }
 
 /// A held weapon model; its glow takes the element's colour.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct HeldWeaponModel {
     pub element: usize,
+    /// The operative body holding it.
+    pub body: Entity,
+    pub hand: Hand,
+    /// See [`model_hold`]; `None` rides a gear mount instead.
+    pub hold: Option<f32>,
 }
 
 /// Marks a model mesh whose material has been checked (and the glow swapped).
@@ -362,6 +521,8 @@ impl FromWorld for HeldWeaponAssets {
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HeldWeaponPart {
     pub base: u16,
+    /// The operative body carrying it.
+    pub body: Entity,
 }
 
 /// Puts the equipped weapon in the local operative's hands and swaps it
@@ -375,7 +536,7 @@ pub fn hold_weapon(
     players: Query<Entity, With<LocalPredictedPlayer>>,
     avatars: Query<&OperativeAvatar>,
     bodies: Query<(Entity, &Parent), With<OperativeBody>>,
-    held: Query<(Entity, &HeldWeaponPart, &GearMount)>,
+    held: Query<(Entity, &HeldWeaponPart)>,
 ) {
     let Ok(player) = players.get_single() else {
         return;
@@ -390,34 +551,41 @@ pub fn hold_weapon(
     let item = armory.data.equipped();
     let current = held
         .iter()
-        .any(|(_, part, mount)| part.base == item.base && mount.body == body);
+        .any(|(_, part)| part.base == item.base && part.body == body);
     if current {
         return;
     }
-    for (entity, _, _) in &held {
+    for (entity, _) in &held {
         commands.entity(entity).despawn_recursive();
     }
     let base = item.base();
     if let Some(scene) = models.scene(base.class) {
-        for hand in model_hands(base.class) {
-            let (from, to) = match hand {
-                Hand::Right => ("lowerarm_r", "hand_r"),
-                Hand::Left => ("lowerarm_l", "hand_l"),
-            };
-            commands.spawn((
+        for &hand in model_hands(base.class) {
+            let hold = model_hold(base.class);
+            let mut model = commands.spawn((
                 Name::new("Held Weapon"),
-                HeldWeaponPart { base: item.base },
+                HeldWeaponPart {
+                    base: item.base,
+                    body,
+                },
                 HeldWeaponModel {
                     element: base.element.index(),
+                    body,
+                    hand,
+                    hold,
                 },
                 SceneRoot(scene.clone()),
                 Transform::default(),
                 Visibility::Hidden,
-                GearMount::new(body, from, to, 1.0)
-                    .aligned()
-                    .lean(carry_lean(base.class))
-                    .reach(model_reach(base.class)),
             ));
+            if hold.is_none() {
+                // Worn, not gripped: rides the forearm into the fist.
+                let (from, to) = match hand {
+                    Hand::Right => ("lowerarm_r", "hand_r"),
+                    Hand::Left => ("lowerarm_l", "hand_l"),
+                };
+                model.insert(GearMount::new(body, from, to, 1.0).aligned());
+            }
         }
         return;
     }
@@ -444,7 +612,10 @@ pub fn hold_weapon(
         };
         let mut part = commands.spawn((
             Name::new("Held Weapon"),
-            HeldWeaponPart { base: item.base },
+            HeldWeaponPart {
+                base: item.base,
+                body,
+            },
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Transform::default(),
@@ -498,6 +669,143 @@ pub fn flow_weapon_glow(
             material.uv_transform = bevy::math::Affine2::from_translation(Vec2::new(0.0, -shift));
         }
     }
+}
+
+/// Closes the fingers of every hand holding a model around its grip (after
+/// the body pose, which leaves the fingers at rest).
+pub fn curl_gripping_fingers(
+    models: Query<&HeldWeaponModel>,
+    bodies: Query<&BodyInstance>,
+    mut joints: Query<&mut Transform, Without<HeldWeaponModel>>,
+) {
+    for model in &models {
+        let Some(body) = bodies.iter().find(|b| b.root == model.body) else {
+            continue;
+        };
+        if body.rest_heads.is_empty() {
+            continue;
+        }
+        for (joint, rotation) in grip_curls(body, model.hand) {
+            if let Ok(mut transform) = joints.get_mut(body.skeleton.joints[joint]) {
+                transform.rotation = rotation;
+            }
+        }
+    }
+}
+
+/// Puts each gripped model in its hand, from the posed hand joints (after
+/// transforms propagate, so this frame's pose and finger curl are in).
+pub fn place_gripped_weapons(
+    bodies: Query<&BodyInstance>,
+    children: Query<&Children>,
+    mut joints: Query<(&mut Transform, &mut GlobalTransform), Without<HeldWeaponModel>>,
+    mut models: Query<(
+        &HeldWeaponModel,
+        &mut Transform,
+        &mut GlobalTransform,
+        &mut Visibility,
+    )>,
+) {
+    for (model, mut transform, mut global, mut visibility) in &mut models {
+        let Some(hold) = model.hold else {
+            continue;
+        };
+        let placed = (|| {
+            let body = bodies.iter().find(|b| b.root == model.body)?;
+            let entity = |name: &str| {
+                let i = *body.skeleton.index.get(name)?;
+                body.skeleton.joints.get(i).copied()
+            };
+            let (hand, forearm) = match model.hand {
+                Hand::Right => (entity("hand_r")?, entity("lowerarm_r")?),
+                Hand::Left => (entity("hand_l")?, entity("lowerarm_l")?),
+            };
+            let body_global = *joints.get(model.body).ok()?.1;
+            roll_wrist(
+                &mut joints,
+                &children,
+                hand,
+                forearm,
+                [
+                    entity(&joint_name("index", 1, model.hand))?,
+                    entity(&joint_name("pinky", 1, model.hand))?,
+                ],
+                &body_global,
+            )?;
+            let joint = |name: &str| Some(joints.get(entity(name)?).ok()?.1.translation());
+            let knuckle = |finger| joint(&joint_name(finger, 1, model.hand));
+            let scale = body_global.to_scale_rotation_translation().0.y;
+            grip_transform(
+                joint(hand_name(model.hand))?,
+                [
+                    knuckle("index")?,
+                    knuckle("middle")?,
+                    knuckle("ring")?,
+                    knuckle("pinky")?,
+                ],
+                closing_sign(body, model.hand)?,
+                hold,
+                scale,
+            )
+        })();
+        match placed {
+            Some(t) => {
+                *transform = t;
+                *global = GlobalTransform::from(t);
+                visibility.set_if_neq(Visibility::Inherited);
+            }
+            None => {
+                visibility.set_if_neq(Visibility::Hidden);
+            }
+        }
+    }
+}
+
+/// Rolls a gripping hand about its forearm so the knuckles face the body's
+/// forward (or up, when the forearm itself points forward), then carries
+/// the new pose down the hand's joints the same frame.
+fn roll_wrist(
+    joints: &mut Query<(&mut Transform, &mut GlobalTransform), Without<HeldWeaponModel>>,
+    children: &Query<&Children>,
+    hand: Entity,
+    forearm: Entity,
+    [index, pinky]: [Entity; 2],
+    body: &GlobalTransform,
+) -> Option<()> {
+    let hand_global = *joints.get(hand).ok()?.1;
+    let forearm_global = *joints.get(forearm).ok()?.1;
+    let axis = (hand_global.translation() - forearm_global.translation()).normalize_or_zero();
+    let knuckles =
+        joints.get(index).ok()?.1.translation() - joints.get(pinky).ok()?.1.translation();
+    let (_, facing, _) = body.to_scale_rotation_translation();
+    // The operative body faces -Z in its own frame.
+    let target = facing * Vec3::NEG_Z + Vec3::Y * 0.35;
+    let roll = wrist_roll(axis, knuckles, target);
+    if axis == Vec3::ZERO || roll.abs() < 1e-3 {
+        return Some(());
+    }
+    let (_, hand_rotation, _) = hand_global.to_scale_rotation_translation();
+    let (_, forearm_rotation, _) = forearm_global.to_scale_rotation_translation();
+    let turned = Quat::from_axis_angle(axis, roll) * hand_rotation;
+    {
+        let (mut local, mut global) = joints.get_mut(hand).ok()?;
+        local.rotation = forearm_rotation.inverse() * turned;
+        *global = forearm_global.mul_transform(*local);
+    }
+    let mut stack = vec![hand];
+    while let Some(entity) = stack.pop() {
+        let parent = *joints.get(entity).ok()?.1;
+        let Ok(kids) = children.get(entity) else {
+            continue;
+        };
+        for &child in kids {
+            if let Ok((local, mut global)) = joints.get_mut(child) {
+                *global = parent.mul_transform(*local);
+                stack.push(child);
+            }
+        }
+    }
+    Some(())
 }
 
 /// Mounts are placed after transforms propagate, so carry their new pose
@@ -572,7 +880,17 @@ impl Plugin for HeldWeaponPlugin {
             )
             .add_systems(
                 PostUpdate,
-                propagate_weapon_models.after(crate::enemy_visuals::follow_gear_mounts),
+                (
+                    place_gripped_weapons
+                        .after(bevy::transform::TransformSystem::TransformPropagate),
+                    propagate_weapon_models
+                        .after(crate::enemy_visuals::follow_gear_mounts)
+                        .after(place_gripped_weapons),
+                ),
+            )
+            .add_systems(
+                Update,
+                curl_gripping_fingers.after(crate::character::pose::animate_bodies),
             );
     }
 }
@@ -618,6 +936,44 @@ mod tests {
         assert_eq!(stems.len(), WeaponClass::ALL.len());
         assert_eq!(model_hands(WeaponClass::DualBlades).len(), 2);
         assert_eq!(model_hands(WeaponClass::Katana), &[Hand::Right]);
+    }
+
+    #[test]
+    fn the_grip_sits_in_the_fist_and_points_out_the_index_side() {
+        // A right hand hanging down, knuckles forward (-Z), palm inward (+X).
+        let wrist = Vec3::new(0.0, 0.8, 0.0);
+        let knuckles = [
+            Vec3::new(0.0, 0.71, -0.03),
+            Vec3::new(0.0, 0.7, -0.01),
+            Vec3::new(0.0, 0.7, 0.01),
+            Vec3::new(0.0, 0.71, 0.03),
+        ];
+        let sign = if Vec3::NEG_Z.cross(Vec3::NEG_Y).dot(Vec3::X) > 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+        let t = grip_transform(wrist, knuckles, sign, 0.0, 1.0).expect("a grip");
+        let along = t.rotation * Vec3::Y;
+        // Out of the index side (forward), leaning down past the fingers.
+        assert!(along.z < -0.9 && along.y < -0.1, "{along:?}");
+        // The grip point is in the palm, a little inside the hand.
+        let palm = (t.translation - wrist).length();
+        assert!(palm > 0.04 && palm < 0.1, "{palm}");
+        assert!(t.translation.x > 0.01, "{:?}", t.translation);
+        // The hold offset slides the model back along its own axis.
+        let held = grip_transform(wrist, knuckles, sign, 0.1, 1.0).unwrap();
+        assert!((held.translation - (t.translation - along * 0.1)).length() < 1e-5);
+    }
+
+    #[test]
+    fn the_wrist_rolls_the_knuckles_towards_the_target() {
+        let axis = Vec3::NEG_Y;
+        let knuckles = Vec3::X;
+        let roll = wrist_roll(axis, knuckles, Vec3::NEG_Z);
+        let turned = Quat::from_axis_angle(axis, roll) * knuckles;
+        assert!((turned - Vec3::NEG_Z).length() < 1e-5, "{turned:?}");
+        assert_eq!(wrist_roll(axis, Vec3::NEG_Y, Vec3::NEG_Z), 0.0);
     }
 
     #[test]
