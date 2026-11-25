@@ -120,12 +120,37 @@ pub fn equipped_stats(item: &WeaponItem) -> WeaponStats {
     stats
 }
 
-pub fn load_armory(mut armory: ResMut<Armory>, path: Res<crate::tutorial::ProgressPath>) {
+/// A weapon base equipped for one session (`--weapon`), never saved.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrialWeapon(pub u16);
+
+pub fn load_armory(
+    mut armory: ResMut<Armory>,
+    path: Res<crate::tutorial::ProgressPath>,
+    trial: Option<Res<TrialWeapon>>,
+) {
     armory.data = crate::tutorial::load_progress(&path.0).armory.sanitized();
+    if let Some(trial) = trial {
+        if usize::from(trial.0) < game_rpg::weapon_bases().len() {
+            // A separate armory so nothing saved is touched.
+            armory.data = ArmoryData {
+                weapons: vec![WeaponItem {
+                    base: trial.0,
+                    rarity: Rarity::Rare,
+                    mods: Vec::new(),
+                }],
+                equipped: 0,
+            };
+        }
+    }
 }
 
-pub fn save_armory(mut armory: ResMut<Armory>, path: Res<crate::tutorial::ProgressPath>) {
-    if !armory.dirty {
+pub fn save_armory(
+    mut armory: ResMut<Armory>,
+    path: Res<crate::tutorial::ProgressPath>,
+    trial: Option<Res<TrialWeapon>>,
+) {
+    if !armory.dirty || trial.is_some() {
         return;
     }
     armory.dirty = false;

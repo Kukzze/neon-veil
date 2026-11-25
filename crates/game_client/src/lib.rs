@@ -16,6 +16,7 @@ pub mod mission;
 pub mod transport;
 pub mod tutorial;
 pub mod visuals;
+pub mod weapon_look;
 
 pub use app::{
     add_gameplay_plugins, build_client_app, build_headless_client_app, build_windowed_client_app,

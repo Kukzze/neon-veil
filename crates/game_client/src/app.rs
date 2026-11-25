@@ -61,6 +61,8 @@ pub struct ClientOptions {
     pub tutorial: bool,
     /// Line up one of each enemy in front of the player.
     pub showcase: bool,
+    /// Equip this weapon base for the session without saving it.
+    pub weapon: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +90,14 @@ where
             "--creator" => options.creator = true,
             "--tutorial" => options.tutorial = true,
             "--showcase" => options.showcase = true,
+            "--weapon" => {
+                let id = args.next().ok_or("--weapon needs a weapon base id")?;
+                options.weapon = Some(
+                    id.as_ref()
+                        .parse()
+                        .map_err(|_| format!("bad weapon id {:?}", id.as_ref()))?,
+                );
+            }
             "--preset" => {
                 let name = args.next().ok_or("--preset needs a preset name")?;
                 let wanted = name.as_ref().to_ascii_lowercase();
@@ -313,6 +323,9 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             if options.showcase {
                 app.insert_resource(crate::mission::ShowcaseEnemies);
             }
+            if let Some(base) = options.weapon {
+                app.insert_resource(crate::armory::TrialWeapon(base));
+            }
         }
     }
     let saved = crate::character::load_appearance(&crate::character::AppearancePath::default().0);
@@ -336,6 +349,7 @@ pub fn build_windowed_client_app(options: ClientOptions) -> anyhow::Result<App> 
             crate::coop::CoopPlugin,
             crate::lattice::LatticePlugin,
             crate::armory::ArmoryPlugin,
+            crate::weapon_look::WeaponLookPlugin,
             crate::creator::CreatorPlugin {
                 start,
                 face_view: options.creator_face,
@@ -480,7 +494,8 @@ mod tests {
                 creator_face: false,
                 preset: None,
                 tutorial: false,
-                showcase: false
+                showcase: false,
+                weapon: None
             })
         );
         assert_eq!(
