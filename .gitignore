@@ -6,3 +6,6 @@
 /web/companion/node_modules
 /web/companion/.next
 
+
+# Assets licensed for use in builds but not for redistribution as files
+/assets/licensed/

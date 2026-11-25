@@ -579,7 +579,7 @@ mod tests {
         for (cx, cz) in [(5, 5), (6, 5), (5, 6), (-7, 3), (9, -9)] {
             for prop in city::block_solids(cx, cz)
                 .into_iter()
-                .filter(|s| s.kind == city::SolidKind::Prop && s.size().x > 1.5)
+                .filter(|s| matches!(s.kind, city::SolidKind::Prop(_)) && s.size().y <= 1.0)
             {
                 // Approach along X from the road side of the pavement.
                 let start = Vec3::new(prop.min.x - 4.0, 0.2, prop.center().z);

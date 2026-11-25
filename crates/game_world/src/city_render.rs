@@ -3,7 +3,7 @@
 //! is in view. Towers are one mesh each with a tiling emissive window
 //! texture; the boundary wall is built once.
 
-use crate::city::{self, Solid, SolidKind};
+use crate::city::{self, PropKind, Solid, SolidKind};
 use crate::mipmaps::{mip_chain, tiling_sampler};
 use avian3d::prelude::{Collider, RigidBody};
 use bevy::asset::RenderAssetUsages;
@@ -45,6 +45,46 @@ pub struct CityPalette {
     barrier: Handle<StandardMaterial>,
     barrier_glow: Handle<StandardMaterial>,
     neon: Vec<Handle<StandardMaterial>>,
+    /// Street prop models (none in headless runs: props draw as boxes).
+    props: Option<PropScenes>,
+}
+
+/// Scanned street-prop and neon-sign models.
+#[derive(Debug, Clone)]
+pub struct PropScenes {
+    trash_bags: Handle<Scene>,
+    waste_bin: Handle<Scene>,
+    a_board: Handle<Scene>,
+    fence: Handle<Scene>,
+    neon_vertical: Handle<Scene>,
+    neon_motel: Handle<Scene>,
+    neon_spaceman: Handle<Scene>,
+}
+
+impl PropScenes {
+    fn load(assets: &AssetServer) -> Self {
+        let scene = |name: &str| {
+            assets.load(GltfAssetLabel::Scene(0).from_asset(format!("world/props/{name}.glb")))
+        };
+        Self {
+            trash_bags: scene("trash_bags"),
+            waste_bin: scene("waste_bin"),
+            a_board: scene("a_board"),
+            fence: scene("fence"),
+            neon_vertical: scene("neon_vertical"),
+            neon_motel: scene("neon_motel"),
+            neon_spaceman: scene("neon_spaceman"),
+        }
+    }
+
+    fn prop(&self, kind: PropKind) -> Handle<Scene> {
+        match kind {
+            PropKind::TrashBags => self.trash_bags.clone(),
+            PropKind::WasteBin => self.waste_bin.clone(),
+            PropKind::ABoard => self.a_board.clone(),
+            PropKind::Fence => self.fence.clone(),
+        }
+    }
 }
 
 /// Which blocks are drawn.
@@ -211,6 +251,7 @@ pub fn setup_city_palette(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: Option<ResMut<Assets<Image>>>,
+    assets: Option<Res<AssetServer>>,
 ) {
     let towers = [
         (0x11, 0.32, 0.7, [0.045, 0.047, 0.055]),
@@ -266,6 +307,7 @@ pub fn setup_city_palette(
         barrier: lit(&mut materials, [0.03, 0.03, 0.035], 0.3, 0.7),
         barrier_glow: glow(&mut materials, LinearRgba::rgb(6.0, 0.6, 0.4)),
         neon,
+        props: assets.as_deref().map(PropScenes::load),
     };
     spawn_boundary(&mut commands, &palette);
     commands.insert_resource(palette);
@@ -323,6 +365,31 @@ fn spawn_solid(
                 RigidBody::Static,
                 Collider::cuboid(size.x, size.y, size.z),
             ));
+            // Neon signs at street level and high on the big towers.
+            if let Some(props) = &palette.props {
+                let front = solid.max.z + 0.2;
+                if index % 4 == 1 && size.y > 12.0 {
+                    let scene = if index % 8 == 1 {
+                        props.neon_motel.clone()
+                    } else {
+                        props.neon_vertical.clone()
+                    };
+                    parent.spawn((
+                        CityPiece,
+                        SceneRoot(scene),
+                        Transform::from_xyz(solid.max.x - 1.5, solid.min.y + 3.5, front + 0.6)
+                            .with_scale(Vec3::splat(1.6)),
+                    ));
+                }
+                if index % 6 == 2 && size.y > 40.0 && size.x > 10.0 {
+                    parent.spawn((
+                        CityPiece,
+                        SceneRoot(props.neon_spaceman.clone()),
+                        Transform::from_xyz(center.x, solid.min.y + 14.0, front)
+                            .with_scale(Vec3::splat(2.5)),
+                    ));
+                }
+            }
             // Some towers carry a vertical neon strip on a corner.
             if index % 3 == 0 && size.y > 20.0 {
                 let neon = palette.neon[index % palette.neon.len()].clone();
@@ -349,12 +416,34 @@ fn spawn_solid(
                 Collider::cuboid(1.0, 1.0, 1.0),
             ));
         }
-        SolidKind::Prop | SolidKind::Rooftop | SolidKind::Bridge => {
-            let material = if solid.kind == SolidKind::Prop {
-                palette.prop.clone()
-            } else {
-                palette.rooftop.clone()
-            };
+        SolidKind::Prop(kind) => {
+            // The collider is the solid box; the model stands on its base.
+            parent.spawn((
+                CityPiece,
+                Transform::from_translation(center),
+                RigidBody::Static,
+                Collider::cuboid(size.x, size.y, size.z),
+            ));
+            match &palette.props {
+                Some(props) => {
+                    parent.spawn((
+                        CityPiece,
+                        SceneRoot(props.prop(kind)),
+                        Transform::from_translation(center.with_y(solid.min.y)),
+                    ));
+                }
+                None => {
+                    parent.spawn((
+                        CityPiece,
+                        Mesh3d(palette.cube.clone()),
+                        MeshMaterial3d(palette.prop.clone()),
+                        Transform::from_translation(center).with_scale(size),
+                    ));
+                }
+            }
+        }
+        SolidKind::Rooftop | SolidKind::Bridge => {
+            let material = palette.rooftop.clone();
             parent.spawn((
                 CityPiece,
                 Mesh3d(palette.cube.clone()),

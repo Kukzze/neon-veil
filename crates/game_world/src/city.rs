@@ -32,14 +32,37 @@ pub enum SolidKind {
     Building { tone: u8 },
     /// Raised pavement a block stands on.
     Sidewalk,
-    /// Street clutter: dumpsters, crates, barriers (vaultable).
-    Prop,
+    /// Street clutter (most of it vaultable).
+    Prop(PropKind),
     /// Rooftop plant: AC units, vents, water tanks.
     Rooftop,
     /// A walkway between towers.
     Bridge,
     /// The edge of the map.
     Barrier,
+}
+
+/// Street props, each sized to its model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PropKind {
+    TrashBags,
+    WasteBin,
+    ABoard,
+    Fence,
+}
+
+impl PropKind {
+    pub const ALL: [Self; 4] = [Self::TrashBags, Self::WasteBin, Self::ABoard, Self::Fence];
+
+    /// Width (X), height, depth (Z) in metres, matching the model.
+    pub fn size(self) -> Vec3 {
+        match self {
+            Self::TrashBags => Vec3::new(0.69, 0.9, 0.83),
+            Self::WasteBin => Vec3::new(0.62, 1.1, 0.62),
+            Self::ABoard => Vec3::new(0.56, 1.0, 0.62),
+            Self::Fence => Vec3::new(2.12, 2.4, 0.11),
+        }
+    }
 }
 
 /// An axis-aligned solid box.
@@ -239,15 +262,17 @@ pub fn block_solids(cx: i32, cz: i32) -> Vec<Solid> {
             2 => (edge, along),
             _ => (-edge, along),
         };
-        let size = match (rng.unit() * 3.0) as u8 {
-            0 => Vec3::new(2.0, 1.3, 1.2),
-            1 => Vec3::new(1.1, 1.1, 1.1),
-            _ => Vec3::new(2.4, 0.9, 0.6),
+        let kind = match (rng.unit() * 10.0) as u8 {
+            0..=3 => PropKind::TrashBags,
+            4..=6 => PropKind::WasteBin,
+            7..=8 => PropKind::ABoard,
+            _ => PropKind::Fence,
         };
+        let size = kind.size();
         out.push(Solid::new(
             Vec3::new(c.x + x, floor + size.y * 0.5, c.z + z),
             size,
-            SolidKind::Prop,
+            SolidKind::Prop(kind),
         ));
     }
     out

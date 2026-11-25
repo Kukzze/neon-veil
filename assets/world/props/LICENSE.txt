@@ -1,0 +1,5 @@
+Street props and neon signs (trash_bags, waste_bin, a_board, fence,
+neon_vertical, neon_motel, neon_spaceman)
+
+Converted from the royalty-free "punkcyber" street scene supplied by the
+project owner: decimated, 1024 px textures, scaled to real sizes.
