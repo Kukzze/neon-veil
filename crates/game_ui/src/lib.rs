@@ -79,6 +79,7 @@ pub fn apply_ui_toggles(input: UiToggleInput, menus: UiMenus) {
 
 /// Reads the local player's rebindable actions (keyboard or gamepad) when
 /// present, otherwise the raw K / Tab keys; Escape is always the raw key.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_ui_keyboard_toggles(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     actions: Query<&ActionState<PlayerAction>, With<LocalPlayerInput>>,
@@ -86,7 +87,21 @@ pub fn handle_ui_keyboard_toggles(
     mut skills: ResMut<SkillsModalState>,
     mut inventory: ResMut<InventoryModalState>,
     mut settings: ResMut<SettingsModalState>,
+    modal: Option<Res<ModalPause>>,
+    overlay: Option<Res<ScreenOverlay>>,
 ) {
+    // A full-screen client panel (lattice, armory, creator) owns its keys,
+    // including the frame it closes on.
+    let busy = |open: bool, changed: bool| open || changed;
+    if modal
+        .as_ref()
+        .is_some_and(|m| busy(m.0, m.is_changed() && !m.is_added()))
+        || overlay
+            .as_ref()
+            .is_some_and(|o| busy(o.0, o.is_changed() && !o.is_added()))
+    {
+        return;
+    }
     let pressed = |key| keys.as_ref().is_some_and(|k| k.just_pressed(key));
     let input = match actions.iter().next() {
         Some(action) => UiToggleInput {

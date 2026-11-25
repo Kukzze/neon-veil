@@ -227,7 +227,12 @@ pub fn simulate_movement_step(
         state.coyote_ticks = 0;
         state.grounded = false;
         state.sliding = false;
-    } else if let (true, false, Some(wall)) = (fresh_jump, state.grounded, contact) {
+    } else if let (true, false, Some(wall), true) = (
+        fresh_jump,
+        state.grounded,
+        contact,
+        state.wall_ticks < WALLRUN_TICKS,
+    ) {
         // Wall jump: kick off the wall, keeping speed along it.
         let along = planar - wall.normal * planar.dot(wall.normal);
         planar = along + wall.normal * WALL_JUMP_PUSH;
@@ -249,6 +254,9 @@ pub fn simulate_movement_step(
             let forward = planar.dot(-wall.normal).max(MANTLE_FORWARD_SPEED);
             planar = -wall.normal * forward;
             state.mantle_ticks = MANTLE_TICKS;
+            // No jump on top of a vault.
+            state.coyote_ticks = 0;
+            state.jump_buffer_ticks = 0;
             state.grounded = false;
             state.sliding = false;
         } else if !state.grounded
@@ -298,14 +306,25 @@ pub struct WallContact {
 
 /// Whether `solid` blocks a body whose feet are at `feet` (too tall to
 /// step onto, and not entirely overhead).
-fn blocks(solid: &Solid, feet: f32) -> bool {
-    solid.max.y > feet + STEP_HEIGHT && solid.min.y < feet + PLAYER_HEIGHT
+fn blocks(solid: &Solid, feet: f32, step: f32) -> bool {
+    solid.max.y > feet + step && solid.min.y < feet + PLAYER_HEIGHT
+}
+
+/// How high an edge the body steps or lands onto: a full step on the
+/// ground and while falling (a jump that just reaches a ledge lands on
+/// it), almost nothing while rising.
+fn step_allowance(grounded: bool, vertical: f32) -> f32 {
+    if grounded || vertical <= 0.0 {
+        STEP_HEIGHT
+    } else {
+        0.02
+    }
 }
 
 /// The nearest wall within touching distance of the body.
 pub fn wall_contact(position: Vec3, solids: &[Solid]) -> Option<WallContact> {
     let mut best: Option<(f32, WallContact)> = None;
-    for s in solids.iter().filter(|s| blocks(s, position.y)) {
+    for s in solids.iter().filter(|s| blocks(s, position.y, STEP_HEIGHT)) {
         let d = s.planar_distance(position);
         if d <= 0.0 || d > PLAYER_RADIUS + WALL_TOUCH {
             continue;
@@ -341,9 +360,10 @@ fn resolve_motion(
     let dt = FIXED_TIMESTEP_SECS;
     let r = PLAYER_RADIUS;
     let prev = *position;
+    let allowance = step_allowance(state.grounded, velocity.y);
     let mut next = prev + Vec3::new(velocity.x, 0.0, velocity.z) * dt;
     for _ in 0..2 {
-        for s in solids.iter().filter(|s| blocks(s, prev.y)) {
+        for s in solids.iter().filter(|s| blocks(s, prev.y, allowance)) {
             let (x0, x1) = (s.min.x - r, s.max.x + r);
             let (z0, z1) = (s.min.z - r, s.max.z + r);
             if next.x <= x0 || next.x >= x1 || next.z <= z0 || next.z >= z1 {
@@ -379,7 +399,6 @@ fn resolve_motion(
             && next.z > s.min.z - feet_room
             && next.z < s.max.z + feet_room
     };
-    let allowance = if state.grounded { STEP_HEIGHT } else { 0.02 };
     let support = solids
         .iter()
         .filter(|s| under(s) && s.max.y <= prev.y + allowance)
@@ -518,6 +537,28 @@ mod tests {
             "{} vs {}",
             body.pos.y,
             roof.max.y
+        );
+    }
+
+    #[test]
+    fn a_jump_that_just_reaches_a_ledge_lands_on_it() {
+        let roof = city::block_solids(5, 5)
+            .into_iter()
+            .find(|s| matches!(s.kind, city::SolidKind::Building { .. }))
+            .expect("a tower");
+        let mut body = at(Vec3::new(
+            roof.min.x - 0.6,
+            roof.max.y - 0.3,
+            roof.center().z,
+        ));
+        body.state.grounded = false;
+        body.vel = Vec3::new(6.0, -0.5, 0.0);
+        body.run(&packet(Vec2::Y, facing(Vec3::X), 0), 12);
+        assert!(body.state.grounded, "landed: {}", body.pos);
+        assert!(
+            (body.pos.y - roof.max.y).abs() < 1e-4,
+            "on the roof: {}",
+            body.pos
         );
     }
 

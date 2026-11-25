@@ -188,10 +188,12 @@ pub fn save_progress(path: &Path, progress: &Progress) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(progress).map_err(std::io::Error::other)?,
-    )
+    // Write a sibling file, then swap it in: a reader never sees a
+    // half-written save, and a crash leaves the old one intact.
+    let text = serde_json::to_string_pretty(progress).map_err(std::io::Error::other)?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, text)?;
+    std::fs::rename(&temp, path)
 }
 
 /// Tutorial dialogue (subtitled; voiced when the audio files exist).
@@ -308,6 +310,7 @@ impl Plugin for TutorialPlugin {
         app.add_systems(
             Update,
             run_tutorial
+                .before(crate::lattice::save_lattice)
                 .run_if(resource_exists::<TutorialActive>)
                 .run_if(in_state(crate::creator::GameFlow::Playing)),
         );
