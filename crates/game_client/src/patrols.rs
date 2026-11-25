@@ -14,8 +14,10 @@ pub const MAX_PATROL_ENEMIES: usize = 10;
 /// Seconds between squads.
 const SPAWN_INTERVAL: f32 = 18.0;
 /// Squads turn up this far from the operative, metres.
-const SPAWN_MIN: f32 = 70.0;
-const SPAWN_MAX: f32 = 260.0;
+const SPAWN_MIN: f32 = 50.0;
+const SPAWN_MAX: f32 = 160.0;
+/// How often hunting patrols update where they think the operative is.
+const HUNT_INTERVAL: f32 = 4.0;
 /// Patrols further than this are removed.
 const DESPAWN_DISTANCE: f32 = 450.0;
 /// Capsule centre height of a standing enemy.
@@ -115,13 +117,36 @@ pub fn direct_patrols(
     }
 }
 
+/// Patrols are hunting: until one spots the operative, each keeps
+/// walking towards where the operative was last reported.
+pub fn hunt_operative(
+    time: Res<Time>,
+    mut timer: Local<f32>,
+    players: Query<&Transform, With<LocalPredictedPlayer>>,
+    mut patrols: Query<&mut game_ai::AiBlackboard, With<PatrolMember>>,
+) {
+    *timer -= time.delta_secs();
+    if *timer > 0.0 {
+        return;
+    }
+    *timer = HUNT_INTERVAL;
+    let Ok(player) = players.get_single() else {
+        return;
+    };
+    for mut blackboard in &mut patrols {
+        if blackboard.target_entity.is_none() {
+            blackboard.investigate_position = Some(player.translation.with_y(STANDING_Y));
+        }
+    }
+}
+
 pub struct PatrolPlugin;
 
 impl Plugin for PatrolPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            direct_patrols.run_if(in_state(crate::creator::GameFlow::Playing)),
+            (direct_patrols, hunt_operative).run_if(in_state(crate::creator::GameFlow::Playing)),
         );
     }
 }
