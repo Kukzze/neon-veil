@@ -532,7 +532,10 @@ mod tests {
             let (_, dir) = targets.iter().find(|(n, _)| *n == arm).expect("arm");
             assert!(dir.z > 0.6 && dir.y > 0.2, "{arm}: {dir}");
         }
-        let (_, thigh) = targets.iter().find(|(n, _)| *n == "thigh_l").expect("thigh");
+        let (_, thigh) = targets
+            .iter()
+            .find(|(n, _)| *n == "thigh_l")
+            .expect("thigh");
         assert!(thigh.z > 0.6, "knee drawn up: {thigh}");
     }
 
