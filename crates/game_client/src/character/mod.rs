@@ -92,6 +92,7 @@ impl Plugin for CharacterPlugin {
                 Update,
                 (
                     body::prepare_bodies,
+                    rigged::prewarm_armor,
                     rigged::prepare_rigged,
                     body::apply_appearances,
                     body::compose_albedos,
@@ -102,7 +103,8 @@ impl Plugin for CharacterPlugin {
                     pose::animate_bodies,
                 )
                     .chain(),
-            );
+            )
+            .add_systems(Update, rigged::end_armor_prewarm);
     }
 }
 

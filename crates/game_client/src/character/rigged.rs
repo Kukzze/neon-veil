@@ -81,6 +81,8 @@ pub fn prepare_rigged(
     transforms: Query<&Transform, Without<RiggedModel>>,
     skin_materials: Query<&MeshMaterial3d<StandardMaterial>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut tuned: Local<HashMap<(AssetId<StandardMaterial>, [u32; 4]), Handle<StandardMaterial>>>,
 ) {
     for (root, rigged, mut root_transform, mut visibility) in &mut roots {
         let Some((skin_entity, skin)) = children
@@ -89,6 +91,18 @@ pub fn prepare_rigged(
         else {
             continue;
         };
+        // The seam mask is cut from the albedo, so wait for it to load.
+        let source = skin_materials
+            .get(skin_entity)
+            .ok()
+            .and_then(|m| materials.get(&m.0).map(|s| (m.0.id(), s.clone())));
+        if source.as_ref().is_some_and(|(_, s)| {
+            s.base_color_texture
+                .as_ref()
+                .is_some_and(|t| images.get(t).is_none())
+        }) {
+            continue;
+        }
         let joints = skin.joints.clone();
         if joints.iter().any(|j| transforms.get(*j).is_err()) {
             continue;
@@ -215,24 +229,35 @@ pub fn prepare_rigged(
         };
         *root_transform = rigged.at * fit;
         // The albedo is near black: lift it to gunmetal, keep the metal low
-        // (there is no sky to reflect) and light the seams in the trim colour.
-        if let Some(source) = skin_materials
-            .get(skin_entity)
-            .ok()
-            .and_then(|m| materials.get(&m.0))
-            .cloned()
-        {
-            let material = StandardMaterial {
-                base_color: Color::linear_rgb(2.4, 2.4, 2.7),
-                metallic: 0.45,
-                perceptual_roughness: 0.55,
-                emissive: rigged.trim,
-                emissive_texture: source.base_color_texture.clone(),
-                ..source
-            };
-            commands
-                .entity(skin_entity)
-                .insert(MeshMaterial3d(materials.add(material)));
+        // (there is no sky to reflect) and light only the brightest seams in
+        // the trim colour. Models sharing a source and trim share a material.
+        if let Some((source_id, source)) = source {
+            let key = (source_id, rigged.trim.to_f32_array().map(f32::to_bits));
+            let handle = tuned
+                .entry(key)
+                .or_insert_with(|| {
+                    let mask = source
+                        .base_color_texture
+                        .as_ref()
+                        .and_then(|t| images.get(t))
+                        .and_then(seam_mask)
+                        .map(|m| images.add(m));
+                    let emissive = if mask.is_some() {
+                        rigged.trim
+                    } else {
+                        LinearRgba::BLACK
+                    };
+                    materials.add(StandardMaterial {
+                        base_color: Color::linear_rgb(2.4, 2.4, 2.7),
+                        metallic: 0.45,
+                        perceptual_roughness: 0.55,
+                        emissive,
+                        emissive_texture: mask,
+                        ..source
+                    })
+                })
+                .clone();
+            commands.entity(skin_entity).insert(MeshMaterial3d(handle));
         }
         // Skinned bounds are the bind pose; the posed body moves out of them.
         commands
@@ -246,9 +271,112 @@ pub fn prepare_rigged(
     }
 }
 
+/// Brightness (0-255) below which the albedo is plate, not a lit seam.
+const SEAM_FLOOR: u8 = 170;
+
+/// An emissive mask keeping only the brightest albedo texels (the panel
+/// seams), ramped up from [`SEAM_FLOOR`]. `None` for formats it can't read.
+pub fn seam_mask(albedo: &Image) -> Option<Image> {
+    use bevy::render::render_asset::RenderAssetUsages;
+    use bevy::render::render_resource::{TextureDimension, TextureFormat};
+    let format = albedo.texture_descriptor.format;
+    if !matches!(
+        format,
+        TextureFormat::Rgba8UnormSrgb | TextureFormat::Rgba8Unorm
+    ) {
+        return None;
+    }
+    let data: Vec<u8> = albedo
+        .data
+        .chunks_exact(4)
+        .flat_map(|px| {
+            let bright = px[0].max(px[1]).max(px[2]);
+            let v = (u32::from(bright.saturating_sub(SEAM_FLOOR)) * 3).min(255) as u8;
+            [v, v, v, 255]
+        })
+        .collect();
+    Some(Image::new(
+        albedo.texture_descriptor.size,
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    ))
+}
+
+/// A tiny armour held just inside the camera's view while the game starts,
+/// so its skinned shaders compile before the first Enforcer appears
+/// (otherwise the real one stays invisible for seconds while they build).
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct ArmorPrewarm {
+    pub until: f32,
+}
+
+/// How long the prewarm copy stays in view.
+const PREWARM_SECS: f32 = 20.0;
+
+/// Spawns the prewarm armour once, as soon as a camera exists.
+pub fn prewarm_armor(
+    mut commands: Commands,
+    mut done: Local<bool>,
+    time: Res<Time>,
+    armor: Option<Res<ArmorAvailable>>,
+    assets: Option<Res<AssetServer>>,
+    cameras: Query<Entity, (With<Camera3d>, With<game_camera::CameraRigController>)>,
+) {
+    if *done || !armor.is_some_and(|a| a.0) {
+        return;
+    }
+    let (Some(assets), Ok(camera)) = (assets, cameras.get_single()) else {
+        return;
+    };
+    // Near the bottom edge, a few pixels tall.
+    let at = Transform::from_xyz(0.0, -0.23, -0.6);
+    let armor = spawn_armor(&mut commands, &assets, camera, 0.006, at, LinearRgba::BLACK);
+    commands.entity(armor).insert(ArmorPrewarm {
+        until: time.elapsed_secs() + PREWARM_SECS,
+    });
+    *done = true;
+}
+
+/// Removes the prewarm armour once its time is up.
+pub fn end_armor_prewarm(
+    mut commands: Commands,
+    time: Res<Time>,
+    prewarms: Query<(Entity, &ArmorPrewarm)>,
+) {
+    for (entity, prewarm) in &prewarms {
+        if time.elapsed_secs() >= prewarm.until {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seam_mask_keeps_only_bright_texels() {
+        use bevy::render::render_asset::RenderAssetUsages;
+        use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+        let albedo = Image::new(
+            Extent3d {
+                width: 3,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            vec![20, 20, 20, 255, 160, 170, 150, 255, 250, 240, 255, 255],
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        let mask = seam_mask(&albedo).expect("rgba8 is readable");
+        // Dark plate and mid grey stay dark; a bright seam lights up fully.
+        assert_eq!(&mask.data[0..4], &[0, 0, 0, 255]);
+        assert_eq!(&mask.data[4..8], &[0, 0, 0, 255]);
+        assert_eq!(&mask.data[8..12], &[255, 255, 255, 255]);
+    }
 
     #[test]
     fn rig_frame_turns_any_facing_into_plus_z() {
